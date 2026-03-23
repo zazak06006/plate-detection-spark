@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LicensePlate AI — Prédiction</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet" />
+    <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+
+<body>
+
+    <nav class="navbar">
+        <div class="nav-brand">
+            <span class="nav-icon">🚗</span>
+            <span>LicensePlate<strong>AI</strong></span>
+        </div>
+        <div class="nav-links">
+            <a href="/">Dashboard EDA</a>
+            <a href="/predict" class="active">Prédiction</a>
+            <a href="/api/stats" target="_blank">API JSON</a>
+        </div>
+    </nav>
+
+    <main class="container">
+
+        <section class="hero">
+            <h1>🔍 Détection de plaques</h1>
+            <p class="hero-subtitle">Uploadez une image pour détecter les plaques d'immatriculation avec YOLOv8</p>
+        </section>
+
+        <!-- UPLOAD ZONE -->
+        <section class="predict-layout">
+            <div class="upload-section">
+                <form method="POST" enctype="multipart/form-data" id="predict-form">
+                    <div class="drop-zone" id="drop-zone">
+                        <div class="drop-icon">📸</div>
+                        <div class="drop-text">Glisser / déposer votre image ici</div>
+                        <div class="drop-subtext">ou cliquer pour parcourir</div>
+                        <input type="file" name="file" id="file-input" accept="image/*" hidden />
+                        <div id="preview-container" class="preview-container hidden">
+                            <img id="preview-img" alt="Aperçu" />
+                            <span id="preview-name" class="preview-name"></span>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-primary btn-full" id="submit-btn">
+                        <span id="btn-text">🚀 Analyser l'image</span>
+                        <span id="btn-loader" class="hidden">⏳ Analyse en cours...</span>
+                    </button>
+                </form>
+
+                {% if error %}
+                <div class="alert alert-error">
+                    ⚠️ {{ error }}
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- RÉSULTATS -->
+            {% if prediction %}
+            <div class="results-section">
+                <div class="result-header">
+                    <h2>Résultat de la détection</h2>
+                    <div class="result-badge {{ 'green' if prediction.nb_plates > 0 else 'red' }}">
+                        {{ prediction.nb_plates }} plaque{{ 's' if prediction.nb_plates > 1 else '' }} détectée{{ 's' if
+                        prediction.nb_plates > 1 else '' }}
+                    </div>
+                </div>
+
+                <div class="result-img-container">
+                    <img src="data:image/png;base64,{{ result_img }}" alt="Résultat" class="result-img" />
+                </div>
+
+                {% if prediction.detections %}
+                <div class="detections-table-wrap">
+                    <h3>Détails des détections</h3>
+                    <table class="detections-table">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Confiance</th>
+                                <th>X min</th>
+                                <th>Y min</th>
+                                <th>X max</th>
+                                <th>Y max</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for d in prediction.detections %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>
+                                    <div class="conf-bar-wrap">
+                                        <div class="conf-bar" style="width: {{ (d.confidence * 100)|int }}%"></div>
+                                        <span>{{ (d.confidence * 100)|int }}%</span>
+                                    </div>
+                                </td>
+                                <td>{{ d.x_min }}</td>
+                                <td>{{ d.y_min }}</td>
+                                <td>{{ d.x_max }}</td>
+                                <td>{{ d.y_max }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                <a href="/predict" class="btn-secondary">↩ Nouvelle analyse</a>
+            </div>
+            {% else %}
+            <div class="results-placeholder">
+                <div class="placeholder-icon">🎯</div>
+                <p>Les résultats de detection<br />s'afficheront ici</p>
+            </div>
+            {% endif %}
+
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>LicensePlate<strong>AI</strong> — Projet Spark Core · M1 ESGI</p>
+    </footer>
+
+    <script src="/static/js/predict.js"></script>
+</body>
+
+</html>

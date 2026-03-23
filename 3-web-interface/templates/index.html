@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>LicensePlate AI — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="/static/css/style.css"/>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav class="navbar">
+    <div class="nav-brand">
+      <span class="nav-icon">🚗</span>
+      <span>LicensePlate<strong>AI</strong></span>
+    </div>
+    <div class="nav-links">
+      <a href="/" class="active">Dashboard EDA</a>
+      <a href="/predict">Prédiction</a>
+      <a href="/api/stats" target="_blank">API JSON</a>
+    </div>
+  </nav>
+
+  <main class="container">
+
+    <!-- HERO -->
+    <section class="hero">
+      <h1>Exploratory Data Analysis</h1>
+      <p class="hero-subtitle">Analyse complète du dataset de détection de plaques d'immatriculation — <strong>10 125 images</strong></p>
+    </section>
+
+    <!-- KPI CARDS -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <span class="kpi-icon">🖼️</span>
+        <div class="kpi-value">{{ stats.get('total_images', '—') | int | format_number }}</div>
+        <div class="kpi-label">Images totales</div>
+      </div>
+      <div class="kpi-card accent-cyan">
+        <span class="kpi-icon">📦</span>
+        <div class="kpi-value">{{ stats.get('total_boxes', '—') | int | format_number }}</div>
+        <div class="kpi-label">Bounding boxes</div>
+      </div>
+      <div class="kpi-card accent-green">
+        <span class="kpi-icon">📊</span>
+        <div class="kpi-value">{{ stats.get('avg_boxes', '—') }}</div>
+        <div class="kpi-label">Moy. plaques / image</div>
+      </div>
+      <div class="kpi-card accent-amber">
+        <span class="kpi-icon">🤖</span>
+        <div class="kpi-value">{{ '✅ Prêt' if stats.get('model_ready') else '⏳ À entraîner' }}</div>
+        <div class="kpi-label">Statut modèle</div>
+      </div>
+    </section>
+
+    <!-- CHARTS GRID -->
+    <section class="section-title">
+      <h2>Visualisations</h2>
+    </section>
+
+    <div class="charts-grid">
+
+      <div class="chart-card span-2">
+        <div class="chart-header">
+          <h3>🥧 Répartition du dataset</h3>
+          <span class="chart-badge">Train / Valid / Test</span>
+        </div>
+        <div class="chart-row">
+          <img src="data:image/png;base64,{{ charts.pie_split }}" alt="Répartition splits"/>
+          <div class="chart-insight">
+            <p>Le dataset est divisé en trois sous-ensembles pour l'entraînement, la validation et le test du modèle.</p>
+            <ul>
+              <li><span class="dot dot-purple"></span> <strong>Train</strong> — données d'entraînement</li>
+              <li><span class="dot dot-cyan"></span> <strong>Valid</strong> — validation pendant l'entraînement</li>
+              <li><span class="dot dot-green"></span> <strong>Test</strong> — évaluation finale</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <h3>📏 Tailles des BBoxes</h3>
+          <span class="chart-badge">Small / Medium / Large</span>
+        </div>
+        <img src="data:image/png;base64,{{ charts.bbox_size }}" alt="Tailles BBox"/>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <h3>📐 Aspect Ratio</h3>
+          <span class="chart-badge">Ratio w/h</span>
+        </div>
+        <img src="data:image/png;base64,{{ charts.aspect_ratio }}" alt="Aspect Ratio"/>
+      </div>
+
+      <div class="chart-card span-2">
+        <div class="chart-header">
+          <h3>🔥 Heatmap positions</h3>
+          <span class="chart-badge">Densité centres BBox</span>
+        </div>
+        <div class="chart-row">
+          <img src="data:image/png;base64,{{ charts.heatmap }}" alt="Heatmap BBox"/>
+          <div class="chart-insight">
+            <p>La heatmap montre où se concentrent les centres des bounding boxes à travers tout le dataset.</p>
+            <p>Une concentration centrale indique que les plaques apparaissent plutôt <strong>au centre des images</strong>.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <h3>📦 Aire BBox par split</h3>
+          <span class="chart-badge">Boxplot (normalisé)</span>
+        </div>
+        <img src="data:image/png;base64,{{ charts.bbox_area }}" alt="Aire BBox"/>
+      </div>
+
+      <div class="chart-card">
+        <div class="chart-header">
+          <h3>🔢 Nb plaques / image</h3>
+          <span class="chart-badge">Distribution</span>
+        </div>
+        <img src="data:image/png;base64,{{ charts.num_boxes }}" alt="Nb plaques"/>
+      </div>
+
+    </div>
+
+    <!-- CTA -->
+    <section class="cta-section">
+      <h2>Prêt à tester le modèle ?</h2>
+      <p>Uploadez une image pour détecter les plaques d'immatriculation en temps réel.</p>
+      <a href="/predict" class="btn-primary">
+        <span>🔍</span> Lancer une prédiction
+      </a>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <p>LicensePlate<strong>AI</strong> — Projet Spark Core · M1 ESGI</p>
+  </footer>
+
+  <script src="/static/js/main.js"></script>
+</body>
+</html>
