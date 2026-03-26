@@ -35,9 +35,8 @@ IMG_SIZE = 256
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 HISTORY_CSV_PATH = Path(__file__).parent / "history.csv"
 
-# Transform pour prétraitement
-TRANSFORM = T.Compose([
-    T.Resize((IMG_SIZE, IMG_SIZE)),
+# Transform pour normalisation UNIQUEMENT (le letterbox est fait séparément)
+NORMALIZE_TRANSFORM = T.Compose([
     T.ToTensor(),
     T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
@@ -121,26 +120,67 @@ def is_model_loaded() -> bool:
 
 
 # ============================================================================
-# PREPROCESSING
+# PREPROCESSING - LETTERBOX (Cohérent avec Spark)
 # ============================================================================
-def preprocess_image(image: Image.Image) -> torch.Tensor:
+def letterbox_image(image: Image.Image) -> Tuple[Image.Image, float, float, float]:
     """
-    Prétraite une image PIL pour l'inférence.
+    Applique un letterbox resize identique à celui de Spark.
+    Redimensionne en conservant le ratio, padding noir centré.
 
     Args:
         image: Image PIL (RGB)
 
     Returns:
-        Tensor [1, 3, 256, 256] normalisé
+        (letterboxed_image, scale, pad_x_normalized, pad_y_normalized)
+    """
+    orig_w, orig_h = image.size
+
+    # Calculer le scale pour garder le ratio
+    scale = min(IMG_SIZE / orig_w, IMG_SIZE / orig_h)
+    new_w = int(orig_w * scale)
+    new_h = int(orig_h * scale)
+
+    # Redimensionner avec le ratio préservé
+    img_resized = image.resize((new_w, new_h), Image.BILINEAR)
+
+    # Créer une nouvelle image noire et coller l'image centrée
+    img_letterbox = Image.new("RGB", (IMG_SIZE, IMG_SIZE), (0, 0, 0))
+    pad_x = (IMG_SIZE - new_w) // 2
+    pad_y = (IMG_SIZE - new_h) // 2
+    img_letterbox.paste(img_resized, (pad_x, pad_y))
+
+    # Retourner les infos normalisées
+    pad_x_norm = float(pad_x) / IMG_SIZE
+    pad_y_norm = float(pad_y) / IMG_SIZE
+
+    return img_letterbox, scale, pad_x_norm, pad_y_norm
+
+
+def preprocess_image(image: Image.Image) -> Tuple[torch.Tensor, float, float]:
+    """
+    Prétraite une image PIL pour l'inférence avec letterbox.
+
+    Args:
+        image: Image PIL (RGB)
+
+    Returns:
+        (tensor, pad_x_norm, pad_y_norm)
+        - tensor: [1, 3, 256, 256] normalisé
+        - pad_x_norm, pad_y_norm: padding appliqué (pour inverse transform)
     """
     if image.mode != 'RGB':
         image = image.convert('RGB')
 
-    tensor = TRANSFORM(image)
-    return tensor.unsqueeze(0)
+    # Letterbox resize
+    img_letterbox, scale, pad_x_norm, pad_y_norm = letterbox_image(image)
+
+    # Normalisation ImageNet
+    tensor = NORMALIZE_TRANSFORM(img_letterbox)
+
+    return tensor.unsqueeze(0), pad_x_norm, pad_y_norm
 
 
-def preprocess_bytes(image_bytes: bytes) -> Tuple[torch.Tensor, Image.Image]:
+def preprocess_bytes(image_bytes: bytes) -> Tuple[torch.Tensor, Image.Image, float, float]:
     """
     Prétraite des bytes d'image.
 
@@ -148,11 +188,53 @@ def preprocess_bytes(image_bytes: bytes) -> Tuple[torch.Tensor, Image.Image]:
         image_bytes: Bytes de l'image
 
     Returns:
-        (tensor, original_image)
+        (tensor, original_image, pad_x_norm, pad_y_norm)
     """
     image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-    tensor = preprocess_image(image)
-    return tensor, image
+    tensor, pad_x_norm, pad_y_norm = preprocess_image(image)
+    return tensor, image, pad_x_norm, pad_y_norm
+
+
+def inverse_letterbox_coords(
+    boxes_normalized: np.ndarray,
+    pad_x_norm: float,
+    pad_y_norm: float,
+    original_size: Tuple[int, int]
+) -> np.ndarray:
+    """
+    Inverse la transformation letterbox pour obtenir les coordonnées
+    dans l'espace de l'image originale.
+
+    Args:
+        boxes_normalized: [N, 4] coordonnées (x1, y1, x2, y2) normalisées [0,1] dans l'espace letterbox
+        pad_x_norm, pad_y_norm: padding appliqué lors du letterbox
+        original_size: (width, height) de l'image originale
+
+    Returns:
+        boxes_pixels: [N, 4] coordonnées en pixels dans l'image originale
+    """
+    if len(boxes_normalized) == 0:
+        return boxes_normalized
+
+    # Région de l'image dans le letterbox
+    img_region_w = 1.0 - 2.0 * pad_x_norm
+    img_region_h = 1.0 - 2.0 * pad_y_norm
+
+    # Inverse transform: coords_orig = (coords_letterbox - pad) / img_region
+    boxes_orig = boxes_normalized.copy()
+    boxes_orig[:, [0, 2]] = (boxes_normalized[:, [0, 2]] - pad_x_norm) / max(img_region_w, 1e-6)
+    boxes_orig[:, [1, 3]] = (boxes_normalized[:, [1, 3]] - pad_y_norm) / max(img_region_h, 1e-6)
+
+    # Clamp to [0, 1]
+    boxes_orig = np.clip(boxes_orig, 0, 1)
+
+    # Convertir en pixels
+    orig_w, orig_h = original_size
+    boxes_pixels = boxes_orig.copy()
+    boxes_pixels[:, [0, 2]] *= orig_w
+    boxes_pixels[:, [1, 3]] *= orig_h
+
+    return boxes_pixels.astype(int)
 
 
 # ============================================================================
@@ -165,7 +247,7 @@ def predict_single_image(
     nms_threshold: float = 0.4
 ) -> Dict:
     """
-    Prédit sur une seule image.
+    Prédit sur une seule image avec letterbox preprocessing.
 
     Args:
         image: Image PIL
@@ -176,44 +258,52 @@ def predict_single_image(
         Dict avec:
             - nb_plates: int
             - detections: List[Dict] avec confidence, x_min, y_min, x_max, y_max
-            - boxes_normalized: List[List[float]] coordonnées normalisées [0-1]
+            - boxes_normalized: List[List[float]] coordonnées normalisées [0-1] dans l'image originale
     """
     model = get_model()
     device = get_device()
 
-    # Prétraitement
+    # Prétraitement avec letterbox
     original_size = image.size  # (width, height)
-    tensor = preprocess_image(image).to(device)
+    tensor, pad_x_norm, pad_y_norm = preprocess_image(image)
+    tensor = tensor.to(device)
 
     # Inférence
     results = predict(model, tensor, score_threshold=score_threshold, nms_threshold=nms_threshold)
     det = results[0]
 
     # Formater les résultats
-    boxes = det['boxes'].cpu().numpy()
+    boxes_letterbox = det['boxes'].cpu().numpy()  # Coordonnées dans l'espace letterbox
     scores = det['scores'].cpu().numpy()
 
     detections = []
     boxes_normalized = []
 
-    for i, (box, score) in enumerate(zip(boxes, scores)):
-        x1, y1, x2, y2 = box  # Coordonnées normalisées [0, 1]
+    if len(boxes_letterbox) > 0:
+        # Inverser le letterbox pour obtenir les coords dans l'image originale
+        boxes_pixels = inverse_letterbox_coords(
+            boxes_letterbox, pad_x_norm, pad_y_norm, original_size
+        )
 
-        # Convertir en pixels
-        x_min = int(x1 * original_size[0])
-        y_min = int(y1 * original_size[1])
-        x_max = int(x2 * original_size[0])
-        y_max = int(y2 * original_size[1])
+        for i, (box_px, box_lb, score) in enumerate(zip(boxes_pixels, boxes_letterbox, scores)):
+            x_min, y_min, x_max, y_max = box_px
 
-        detections.append({
-            "confidence": float(score),
-            "x_min": x_min,
-            "y_min": y_min,
-            "x_max": x_max,
-            "y_max": y_max
-        })
+            detections.append({
+                "confidence": float(score),
+                "x_min": int(x_min),
+                "y_min": int(y_min),
+                "x_max": int(x_max),
+                "y_max": int(y_max)
+            })
 
-        boxes_normalized.append([float(x1), float(y1), float(x2), float(y2)])
+            # Coords normalisées dans l'espace original
+            orig_w, orig_h = original_size
+            boxes_normalized.append([
+                float(x_min) / orig_w,
+                float(y_min) / orig_h,
+                float(x_max) / orig_w,
+                float(y_max) / orig_h
+            ])
 
     return {
         "nb_plates": len(detections),
@@ -301,7 +391,7 @@ def predict_batch_simple(
     nms_threshold: float = 0.4
 ) -> List[Dict]:
     """
-    Prédiction batch simple (sans Spark).
+    Prédiction batch simple avec letterbox (sans Spark).
     Utilisé pour des petits batches (< 10 images).
 
     Args:
@@ -317,35 +407,47 @@ def predict_batch_simple(
 
     results = []
 
-    # Prétraiter toutes les images
+    # Prétraiter toutes les images avec letterbox
     tensors = []
     original_sizes = []
+    letterbox_params = []  # (pad_x_norm, pad_y_norm)
 
     for img in images:
         if img.mode != 'RGB':
             img = img.convert('RGB')
         original_sizes.append(img.size)
-        tensors.append(TRANSFORM(img))
+
+        # Letterbox + normalisation
+        img_letterbox, scale, pad_x_norm, pad_y_norm = letterbox_image(img)
+        tensors.append(NORMALIZE_TRANSFORM(img_letterbox))
+        letterbox_params.append((pad_x_norm, pad_y_norm))
 
     # Batch inference
     batch_tensor = torch.stack(tensors).to(device)
     batch_results = predict(model, batch_tensor, score_threshold=score_threshold, nms_threshold=nms_threshold)
 
-    # Formater les résultats
-    for i, (det, orig_size) in enumerate(zip(batch_results, original_sizes)):
-        boxes = det['boxes'].cpu().numpy()
+    # Formater les résultats avec inverse letterbox
+    for i, (det, orig_size, lb_params) in enumerate(zip(batch_results, original_sizes, letterbox_params)):
+        boxes_letterbox = det['boxes'].cpu().numpy()
         scores = det['scores'].cpu().numpy()
+        pad_x_norm, pad_y_norm = lb_params
 
         detections = []
-        for box, score in zip(boxes, scores):
-            x1, y1, x2, y2 = box
-            detections.append({
-                "confidence": float(score),
-                "x_min": int(x1 * orig_size[0]),
-                "y_min": int(y1 * orig_size[1]),
-                "x_max": int(x2 * orig_size[0]),
-                "y_max": int(y2 * orig_size[1])
-            })
+        if len(boxes_letterbox) > 0:
+            # Inverser le letterbox
+            boxes_pixels = inverse_letterbox_coords(
+                boxes_letterbox, pad_x_norm, pad_y_norm, orig_size
+            )
+
+            for box_px, score in zip(boxes_pixels, scores):
+                x_min, y_min, x_max, y_max = box_px
+                detections.append({
+                    "confidence": float(score),
+                    "x_min": int(x_min),
+                    "y_min": int(y_min),
+                    "x_max": int(x_max),
+                    "y_max": int(y_max)
+                })
 
         results.append({
             "nb_plates": len(detections),

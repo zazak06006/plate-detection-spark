@@ -23,3 +23,5 @@ timestamp,image_name,nb_plates,detections,status
 2026-03-26T16:32:41.068857,archiPA.png,1,"[{'confidence': 0.4499887228012085, 'x_min': 623, 'y_min': 722, 'x_max': 820, 'y_max': 846}]",success
 2026-03-26T16:32:54.149430,better-caul-sall-banner.jpg,0,[],success
 2026-03-26T16:33:07.435713,unnamed.jpg,0,[],success
+2026-03-26T17:41:42.189325,xemayBigPlate18_jpg.rf.9eb54064f9b30795d14a040febd9a287.jpg,2,"[{'confidence': 0.9981603026390076, 'x_min': 182, 'y_min': 199, 'x_max': 325, 'y_max': 313}, {'confidence': 0.34353572130203247, 'x_min': 252, 'y_min': 198, 'x_max': 393, 'y_max': 298}]",success
+2026-03-26T17:46:11.074059,xemayBigPlate18_jpg.rf.9eb54064f9b30795d14a040febd9a287.jpg,2,"[{'confidence': 0.9981603026390076, 'x_min': 182, 'y_min': 199, 'x_max': 325, 'y_max': 313}, {'confidence': 0.34353572130203247, 'x_min': 252, 'y_min': 198, 'x_max': 393, 'y_max': 298}]",success

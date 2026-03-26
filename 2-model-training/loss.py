@@ -1,13 +1,16 @@
 """
-Loss Functions pour SSD
+Loss Functions pour SSD avec BoxCoder
 - Focal Loss pour classification (gère le déséquilibre de classes)
-- Smooth L1 Loss pour régression bbox
+- Smooth L1 Loss pour régression bbox (sur les deltas)
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple
+
+# Import du BoxCoder depuis model.py
+from model import BOX_CODER
 
 
 # ============================================================================
@@ -242,18 +245,24 @@ class SSDLoss(nn.Module):
             total_cls_loss = total_cls_loss + cls_loss_b
 
             # ============================================================
-            # REGRESSION LOSS (seulement sur positifs)
+            # REGRESSION LOSS (seulement sur positifs) - avec BoxCoder
             # ============================================================
             if pos_anchors.sum() > 0:
-                # Boxes prédites pour les positifs
-                pred_boxes_pos = pred_boxes[pos_anchors]  # [n_pos, 4]
+                # Deltas prédits pour les positifs
+                pred_deltas_pos = pred_boxes[pos_anchors]  # [n_pos, 4] - ce sont des deltas maintenant
+
+                # Anchors correspondants aux positifs
+                anchors_pos = anchors[pos_anchors]  # [n_pos, 4]
 
                 # GT correspondantes
                 gt_idx_pos = best_gt_idx[pos_anchors]
                 gt_boxes_pos = gt_boxes_valid[gt_idx_pos]  # [n_pos, 4]
 
-                # Loss de régression
-                reg_loss_b = self.reg_loss_fn(pred_boxes_pos, gt_boxes_pos)
+                # Encoder les GT en deltas par rapport aux anchors
+                gt_deltas_pos = BOX_CODER.encode(gt_boxes_pos, anchors_pos)  # [n_pos, 4]
+
+                # Loss de régression sur les deltas
+                reg_loss_b = self.reg_loss_fn(pred_deltas_pos, gt_deltas_pos)
                 reg_loss_b = reg_loss_b.sum() / max(n_pos, 1)
             else:
                 reg_loss_b = torch.tensor(0.0, device=device)
@@ -351,9 +360,7 @@ def create_ssd_loss(
 # TEST
 # ============================================================================
 if __name__ == "__main__":
-    print("🧪 Testing SSD Loss...")
-
-
+    print("🧪 Testing SSD Loss with BoxCoder...")
 
     # Créer la loss
     criterion = create_ssd_loss()
@@ -364,10 +371,17 @@ if __name__ == "__main__":
     num_classes = 2
     max_objects = 20
 
-    anchors = torch.randn(num_anchors, 4)
+    # Anchors valides (format cx, cy, w, h)
+    # Simuler des anchors sur une grille
+    anchors = torch.zeros(num_anchors, 4)
+    anchors[:, 0] = torch.linspace(0.1, 0.9, num_anchors)  # cx
+    anchors[:, 1] = torch.linspace(0.1, 0.9, num_anchors)  # cy
+    anchors[:, 2] = 0.1  # w (10% de l'image)
+    anchors[:, 3] = 0.1  # h
 
     cls_preds = torch.randn(B, num_anchors, num_classes, requires_grad=True)
-    reg_preds = torch.sigmoid(torch.randn(B, num_anchors, 4, requires_grad=True))
+    # reg_preds sont maintenant des deltas bruts (pas de sigmoid)
+    reg_preds = torch.randn(B, num_anchors, 4, requires_grad=True)
 
     cls_targets = torch.zeros(B, max_objects)
     cls_targets[0, 0] = 1  # Une plaque dans image 0

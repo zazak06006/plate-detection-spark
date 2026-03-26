@@ -20,6 +20,106 @@ MAX_OBJECTS = 20
 
 
 # ============================================================================
+# BOX CODER - Encode/Decode offsets relatifs aux anchors
+# ============================================================================
+class BoxCoder:
+    """
+    Encode les GT boxes en offsets (deltas) par rapport aux anchors.
+    Decode les prédictions (deltas) en boxes absolues.
+
+    Formules d'encodage (GT -> deltas):
+        delta_cx = (gt_cx - anchor_cx) / anchor_w
+        delta_cy = (gt_cy - anchor_cy) / anchor_h
+        delta_w = log(gt_w / anchor_w)
+        delta_h = log(gt_h / anchor_h)
+
+    Formules de décodage (deltas -> boxes):
+        pred_cx = delta_cx * anchor_w + anchor_cx
+        pred_cy = delta_cy * anchor_h + anchor_cy
+        pred_w = exp(delta_w) * anchor_w
+        pred_h = exp(delta_h) * anchor_h
+    """
+
+    def __init__(self, weights: Tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)):
+        """
+        Args:
+            weights: Poids pour normaliser les deltas (cx, cy, w, h).
+                     Des valeurs plus grandes réduisent la variance des deltas.
+        """
+        self.weights = weights
+
+    def encode(self, gt_boxes: torch.Tensor, anchors: torch.Tensor) -> torch.Tensor:
+        """
+        Encode les GT boxes en deltas par rapport aux anchors.
+
+        Args:
+            gt_boxes: [N, 4] format (cx, cy, w, h) normalisé [0,1]
+            anchors: [N, 4] format (cx, cy, w, h) normalisé [0,1]
+
+        Returns:
+            deltas: [N, 4] offsets encodés
+        """
+        wx, wy, ww, wh = self.weights
+
+        # Extraire les composantes
+        gt_cx, gt_cy, gt_w, gt_h = gt_boxes.unbind(-1)
+        anchor_cx, anchor_cy, anchor_w, anchor_h = anchors.unbind(-1)
+
+        # Éviter division par zéro
+        anchor_w = anchor_w.clamp(min=1e-6)
+        anchor_h = anchor_h.clamp(min=1e-6)
+        gt_w = gt_w.clamp(min=1e-6)
+        gt_h = gt_h.clamp(min=1e-6)
+
+        # Calculer les deltas
+        delta_cx = wx * (gt_cx - anchor_cx) / anchor_w
+        delta_cy = wy * (gt_cy - anchor_cy) / anchor_h
+        delta_w = ww * torch.log(gt_w / anchor_w)
+        delta_h = wh * torch.log(gt_h / anchor_h)
+
+        return torch.stack([delta_cx, delta_cy, delta_w, delta_h], dim=-1)
+
+    def decode(self, deltas: torch.Tensor, anchors: torch.Tensor) -> torch.Tensor:
+        """
+        Decode les deltas en boxes absolues.
+
+        Args:
+            deltas: [N, 4] offsets prédits
+            anchors: [N, 4] format (cx, cy, w, h)
+
+        Returns:
+            boxes: [N, 4] format (cx, cy, w, h) normalisé [0,1]
+        """
+        wx, wy, ww, wh = self.weights
+
+        # Extraire les composantes
+        delta_cx, delta_cy, delta_w, delta_h = deltas.unbind(-1)
+        anchor_cx, anchor_cy, anchor_w, anchor_h = anchors.unbind(-1)
+
+        # Clamp delta_w et delta_h pour éviter exp() trop grand
+        delta_w = delta_w.clamp(max=4.0)
+        delta_h = delta_h.clamp(max=4.0)
+
+        # Décoder
+        pred_cx = (delta_cx / wx) * anchor_w + anchor_cx
+        pred_cy = (delta_cy / wy) * anchor_h + anchor_cy
+        pred_w = torch.exp(delta_w / ww) * anchor_w
+        pred_h = torch.exp(delta_h / wh) * anchor_h
+
+        # Clamp pour rester dans [0, 1]
+        pred_cx = pred_cx.clamp(0, 1)
+        pred_cy = pred_cy.clamp(0, 1)
+        pred_w = pred_w.clamp(min=0.001, max=1.0)
+        pred_h = pred_h.clamp(min=0.001, max=1.0)
+
+        return torch.stack([pred_cx, pred_cy, pred_w, pred_h], dim=-1)
+
+
+# Instance globale du BoxCoder
+BOX_CODER = BoxCoder(weights=(10.0, 10.0, 5.0, 5.0))  # Poids standard SSD
+
+
+# ============================================================================
 # BACKBONE CNN SIMPLE
 # ============================================================================
 class SimpleCNNBackbone(nn.Module):
@@ -239,7 +339,7 @@ class SimpleSSD(nn.Module):
             x: [B, 3, 256, 256]
         Returns:
             cls_preds: [B, 1344, num_classes] - logits
-            reg_preds: [B, 1344, 4] - (cx, cy, w, h) normalisés
+            reg_preds: [B, 1344, 4] - deltas (offsets par rapport aux anchors)
         """
         # Extraire les feature maps
         features = self.backbone(x)
@@ -255,10 +355,11 @@ class SimpleSSD(nn.Module):
 
         # Concaténer toutes les prédictions
         cls_preds = torch.cat(all_cls, dim=1)  # [B, 1344, num_classes]
-        reg_preds = torch.cat(all_reg, dim=1)  # [B, 1344, 4]
+        reg_preds = torch.cat(all_reg, dim=1)  # [B, 1344, 4] - deltas bruts
 
-        # Sigmoid pour normaliser les coordonnées (0-1)
-        reg_preds = torch.sigmoid(reg_preds)
+        # NOTE: On ne fait plus sigmoid ici !
+        # Les reg_preds sont maintenant des deltas qui seront décodés
+        # avec le BoxCoder lors de l'inférence
 
         return cls_preds, reg_preds
 
@@ -288,16 +389,18 @@ def create_model(num_classes: int = NUM_CLASSES) -> SimpleSSD:
 def decode_predictions(
     cls_preds: torch.Tensor,
     reg_preds: torch.Tensor,
+    anchors: torch.Tensor,
     score_threshold: float = 0.5,
     nms_threshold: float = 0.4,
     max_detections: int = 100
 ) -> List[Dict]:
     """
-    Décode les prédictions brutes en boxes finales avec NMS.
+    Décode les prédictions (deltas) en boxes finales avec NMS.
 
     Args:
         cls_preds: [B, num_anchors, num_classes] - logits
-        reg_preds: [B, num_anchors, 4] - (cx, cy, w, h) normalisés
+        reg_preds: [B, num_anchors, 4] - deltas (offsets par rapport aux anchors)
+        anchors: [num_anchors, 4] - anchors (cx, cy, w, h)
         score_threshold: Seuil de confiance
         nms_threshold: Seuil IoU pour NMS
         max_detections: Max boxes par image
@@ -321,12 +424,13 @@ def decode_predictions(
     for b in range(B):
         # Prendre la classe 1 (plate) uniquement
         scores = cls_probs[b, :, 1]  # [num_anchors]
-        boxes_cxcywh = reg_preds[b]   # [num_anchors, 4]
+        deltas = reg_preds[b]         # [num_anchors, 4]
 
         # Filtrer par score
         mask = scores > score_threshold
         scores = scores[mask]
-        boxes_cxcywh = boxes_cxcywh[mask]
+        deltas = deltas[mask]
+        anchors_masked = anchors[mask]
 
         if len(scores) == 0:
             results.append({
@@ -335,6 +439,9 @@ def decode_predictions(
                 'classes': torch.empty(0, dtype=torch.long, device=device)
             })
             continue
+
+        # Décoder les deltas en boxes (cx, cy, w, h)
+        boxes_cxcywh = BOX_CODER.decode(deltas, anchors_masked)
 
         # Convertir cx,cy,w,h -> x1,y1,x2,y2
         boxes_xyxy = cxcywh_to_xyxy(boxes_cxcywh)
@@ -401,7 +508,7 @@ def predict(
     max_detections: int = 100
 ) -> List[Dict]:
     """
-    Fonction de prédiction simple.
+    Fonction de prédiction avec BoxCoder.
 
     Args:
         model: Modèle SSD entraîné
@@ -432,9 +539,12 @@ def predict(
     # Forward pass
     cls_preds, reg_preds = model(images)
 
-    # Décoder avec NMS
+    # Récupérer les anchors du modèle
+    anchors = model.anchors.to(images.device)
+
+    # Décoder avec NMS (utilise BoxCoder en interne)
     results = decode_predictions(
-        cls_preds, reg_preds,
+        cls_preds, reg_preds, anchors,
         score_threshold=score_threshold,
         nms_threshold=nms_threshold,
         max_detections=max_detections
