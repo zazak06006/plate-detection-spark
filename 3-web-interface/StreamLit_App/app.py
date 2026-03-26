@@ -399,7 +399,7 @@ with left_col:
         if not api_state["online"]:
             st.error("Flask API is not reachable. Check that it is running on http://localhost:5000")
         elif not api_state["model_loaded"]:
-            st.error("YOLO model is not loaded on the Flask side.")
+            st.error("The model is not loaded on the Flask side.")
         elif not uploaded_files:
             st.warning("Please upload at least one image.")
         else:
