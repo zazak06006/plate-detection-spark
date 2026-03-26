@@ -63,7 +63,7 @@ def load_model():
     global model
     if MODEL_PATH.exists():
         model = YOLO(str(MODEL_PATH))
-        print("✅ Modèle YOLOv8 chargé")
+        print("✅ Modèle chargé")
     else:
         print(f"⚠️  Modèle introuvable : {MODEL_PATH} — entraîne d'abord le Microservice 2")
 
