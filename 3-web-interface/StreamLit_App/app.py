@@ -5,6 +5,7 @@ import base64
 import datetime
 from io import BytesIO
 from PIL import Image
+
 st.markdown("""
 <style>
 #MainMenu {visibility: hidden;}
@@ -12,20 +13,21 @@ header {visibility: hidden;}
 footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
+
 # =========================================================
 # CONFIG
 # =========================================================
 API_URL = "http://localhost:5000"
 
 st.set_page_config(
-    page_title="Détection de plaques",
+    page_title="License Plate Detection",
     page_icon="🚗",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
 # =========================================================
-# CSS MODERNE
+# CSS MODERNE (INCHANGÉ)
 # =========================================================
 st.markdown("""
 <style>
@@ -277,7 +279,7 @@ def predict_image(uploaded_file):
         }
         r = requests.post(f"{API_URL}/api/predict", files=files, timeout=120)
         return r
-    except Exception as e:
+    except Exception:
         return None
 
 def add_to_history(filename, nb_plates, status, detections=None):
@@ -298,24 +300,24 @@ stats = get_stats()
 left_header, right_header = st.columns([4, 1.2])
 
 with left_header:
-    st.markdown('<div class="main-title">🚗 Détection intelligente de plaques</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-title">🚗 License Plate Detection</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="subtitle">Interface Streamlit pour la prédiction à partir d’une ou plusieurs images.</div>',
+        '<div class="subtitle">Interface for prediction from one or multiple images.</div>',
         unsafe_allow_html=True
     )
 
 with right_header:
     status_class = "status-on" if api_state["online"] else "status-off"
     status_icon = "🟢" if api_state["online"] else "🔴"
-    status_text = "API en ligne" if api_state["online"] else "API hors ligne"
+    status_text = "Online API !" if api_state["online"] else "Offline API !"
 
     st.markdown(
         f"""
         <div class="card" style="text-align:center;">
             <div class="status-pill {status_class}">{status_icon} {status_text}</div>
             <div style="height:10px;"></div>
-            <div class="small-muted">Modèle : {"chargé" if api_state["model_loaded"] else "non chargé"}</div>
-            <div class="small-muted">Données : {"chargées" if api_state["data_loaded"] else "non chargées"}</div>
+            <div class="small-muted">Model: {"loaded" if api_state["model_loaded"] else "not loaded"}</div>
+            <div class="small-muted">Data: {"loaded" if api_state["data_loaded"] else "not loaded"}</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -334,9 +336,9 @@ avg_area = stats.get("avg_bbox_area_norm", 0) if stats else 0
 with k1:
     st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">Images dataset</div>
+        <div class="kpi-title">Dataset images</div>
         <div class="kpi-value">{total_images}</div>
-        <div class="kpi-sub">Total des images disponibles</div>
+        <div class="kpi-sub">Total available images</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -345,207 +347,163 @@ with k2:
     <div class="kpi-card">
         <div class="kpi-title">Bounding boxes</div>
         <div class="kpi-value">{total_boxes}</div>
-        <div class="kpi-sub">Annotations du dataset</div>
+        <div class="kpi-sub">Dataset annotations</div>
     </div>
     """, unsafe_allow_html=True)
 
 with k3:
     st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">Aspect ratio moyen</div>
+        <div class="kpi-title">Average aspect ratio</div>
         <div class="kpi-value">{avg_ratio}</div>
-        <div class="kpi-sub">Moyenne largeur / hauteur</div>
+        <div class="kpi-sub">Average width / height</div>
     </div>
     """, unsafe_allow_html=True)
 
 with k4:
     st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">Aire bbox moyenne</div>
+        <div class="kpi-title">Average bbox area</div>
         <div class="kpi-value">{avg_area}</div>
-        <div class="kpi-sub">BBox normalisée moyenne</div>
+        <div class="kpi-sub">Average normalized bbox area</div>
     </div>
     """, unsafe_allow_html=True)
 
 st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
 
 # =========================================================
-# LAYOUT PRINCIPAL
+# MAIN
 # =========================================================
 left_col, right_col = st.columns([2.1, 1])
 
-# =========================================================
-# COLONNE GAUCHE - PREDICTION
-# =========================================================
 with left_col:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">📤 Upload & prédiction</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📤 Upload & prediction</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="small-muted">Charge une ou plusieurs images puis lance la détection des plaques.</div>',
+        '<div class="small-muted">Upload one or more images then run license plate detection.</div>',
         unsafe_allow_html=True
     )
 
     uploaded_files = st.file_uploader(
-        "Choisir une ou plusieurs images",
+        "Choose one or more images",
         type=["jpg", "jpeg", "png"],
         accept_multiple_files=True,
         label_visibility="collapsed"
     )
 
-    run_prediction = st.button("🔍 Lancer la prédiction")
+    run_prediction = st.button("🔍 Run prediction")
 
     st.markdown('</div>', unsafe_allow_html=True)
 
     if run_prediction:
         if not api_state["online"]:
-            st.error("L’API Flask n’est pas accessible. Vérifie que le microservice tourne sur http://localhost:5000")
+            st.error("Flask API is not reachable. Check that it is running on http://localhost:5000")
         elif not api_state["model_loaded"]:
-            st.error("Le modèle YOLO n’est pas chargé côté Flask.")
+            st.error("YOLO model is not loaded on the Flask side.")
         elif not uploaded_files:
-            st.warning("Ajoute au moins une image.")
+            st.warning("Please upload at least one image.")
         else:
             for file in uploaded_files:
-                with st.spinner(f"Analyse de {file.name}..."):
+                with st.spinner(f"Analyzing {file.name}..."):
                     response = predict_image(file)
 
                 st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.markdown(f'<div class="section-title">🖼️ Résultat — {file.name}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="section-title">🖼️ Result — {file.name}</div>', unsafe_allow_html=True)
 
                 if response is None:
-                    st.error("Impossible de contacter l’API.")
-                    add_to_history(file.name, 0, "Erreur API")
+                    st.error("Unable to contact the API.")
+                    add_to_history(file.name, 0, "API error")
                 elif response.status_code != 200:
                     try:
-                        err = response.json().get("error", "Erreur inconnue")
+                        err = response.json().get("error", "Unknown error")
                     except Exception:
                         err = response.text
                     st.error(err)
-                    add_to_history(file.name, 0, "Erreur")
+                    add_to_history(file.name, 0, "Error")
                 else:
                     data = response.json()
 
                     col_img1, col_img2 = st.columns(2)
 
                     with col_img1:
-                        original_img = Image.open(BytesIO(file.getvalue()))
-                        st.image(original_img, caption="Image originale", use_container_width=True)
+                        st.image(Image.open(BytesIO(file.getvalue())), caption="Original image", use_container_width=True)
 
                     with col_img2:
                         if data.get("annotated_image"):
-                            annotated = decode_base64_image(data["annotated_image"])
-                            st.image(annotated, caption="Image annotée", use_container_width=True)
+                            st.image(decode_base64_image(data["annotated_image"]), caption="Annotated image", use_container_width=True)
 
                     nb_plates = data.get("nb_plates", 0)
                     detections = data.get("detections", [])
 
-                    st.markdown(
-                        f"""
-                        <div class="prediction-box">
-                            <div style="font-size:1rem; font-weight:800; color:#f8fafc;">
-                                Plaques détectées : {nb_plates}
-                            </div>
-                            <div class="small-muted" style="margin-top:6px;">
-                                Résultat de la détection pour cette image.
-                            </div>
+                    st.markdown(f"""
+                    <div class="prediction-box">
+                        <div style="font-size:1rem; font-weight:800; color:#f8fafc;">
+                            Detected plates: {nb_plates}
                         </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                        <div class="small-muted" style="margin-top:6px;">
+                            Detection result for this image.
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
                     if detections:
-                        st.markdown('<div style="height:10px;"></div>', unsafe_allow_html=True)
-                        st.markdown("**Détails des détections**")
+                        st.markdown("**Detection details**")
 
-                        det_rows = []
-                        for i, det in enumerate(detections, start=1):
-                            det_rows.append({
-                                "Plaque": f"Détection {i}",
-                                "Confiance": det["confidence"],
+                        rows = []
+                        for i, det in enumerate(detections, 1):
+                            rows.append({
+                                "Plate": f"Detection {i}",
+                                "Confidence": det["confidence"],
                                 "x_min": det["x_min"],
                                 "y_min": det["y_min"],
                                 "x_max": det["x_max"],
                                 "y_max": det["y_max"],
                             })
 
-                        st.dataframe(pd.DataFrame(det_rows), use_container_width=True)
-
-                        st.markdown('<div style="margin-top:8px;">', unsafe_allow_html=True)
-                        for i, det in enumerate(detections, start=1):
-                            st.markdown(
-                                f"""
-                                <span class="prediction-chip">
-                                    Détection {i} — conf {det["confidence"]}
-                                </span>
-                                """,
-                                unsafe_allow_html=True
-                            )
-                        st.markdown('</div>', unsafe_allow_html=True)
+                        st.dataframe(pd.DataFrame(rows), use_container_width=True)
                     else:
-                        st.info("Aucune plaque détectée sur cette image.")
+                        st.info("No license plate detected.")
 
-                    add_to_history(file.name, nb_plates, "Succès", detections)
+                    add_to_history(file.name, nb_plates, "Success", detections)
 
                 st.markdown('</div>', unsafe_allow_html=True)
 
-# =========================================================
-# COLONNE DROITE - HISTORIQUE
-# =========================================================
 with right_col:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">🕘 Historique des prédictions</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="small-muted">Les dernières analyses effectuées dans cette session.</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown('<div class="section-title">🕘 Prediction history</div>', unsafe_allow_html=True)
+    st.markdown('<div class="small-muted">Latest analyses performed in this session.</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.history:
-        total_preds = len(st.session_state.history)
-        total_detected = sum(item["nb_plates"] for item in st.session_state.history)
-
         a, b = st.columns(2)
         with a:
-            st.metric("Prédictions", total_preds)
+            st.metric("Predictions", len(st.session_state.history))
         with b:
-            st.metric("Plaques détectées", total_detected)
-
-        st.markdown('<div style="height: 8px;"></div>', unsafe_allow_html=True)
+            st.metric("Detected plates", sum(x["nb_plates"] for x in st.session_state.history))
 
         for item in st.session_state.history:
-            badge_color = "#34d399" if item["status"] == "Succès" else "#f87171"
-            st.markdown(
-                f"""
-                <div class="history-card">
-                    <div class="history-title">{item["filename"]}</div>
-                    <div class="history-meta">{item["datetime"]}</div>
-                    <hr class="custom">
-                    <div style="display:flex; justify-content:space-between; align-items:center;">
-                        <div style="color:#cbd5e1;">Plaques détectées</div>
-                        <div style="font-weight:800; color:#f8fafc;">{item["nb_plates"]}</div>
-                    </div>
-                    <div style="margin-top:8px; color:{badge_color}; font-weight:700;">
-                        {item["status"]}
-                    </div>
+            st.markdown(f"""
+            <div class="history-card">
+                <div class="history-title">{item["filename"]}</div>
+                <div class="history-meta">{item["datetime"]}</div>
+                <hr class="custom">
+                <div style="display:flex; justify-content:space-between;">
+                    <div>Detected plates</div>
+                    <div>{item["nb_plates"]}</div>
                 </div>
-                """,
-                unsafe_allow_html=True
-            )
+                <div>{item["status"]}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        hist_df = pd.DataFrame(st.session_state.history)
         st.download_button(
-            "⬇️ Télécharger l’historique CSV",
-            data=hist_df.to_csv(index=False).encode("utf-8"),
-            file_name="historique_predictions.csv",
-            mime="text/csv",
-            use_container_width=True
+            "⬇️ Download history CSV",
+            data=pd.DataFrame(st.session_state.history).to_csv(index=False),
+            file_name="history.csv"
         )
     else:
-        st.markdown(
-            """
-            <div class="history-card">
-                <div class="history-title">Aucune prédiction</div>
-                <div class="history-meta">L’historique apparaîtra ici après la première analyse.</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.markdown("""
+        <div class="history-card">
+            <div class="history-title">No predictions</div>
+            <div class="history-meta">History will appear here after first analysis.</div>
+        </div>
+        """, unsafe_allow_html=True)
