@@ -26,3 +26,13 @@ timestamp,image_name,nb_plates,detections,status
 2026-03-26T17:41:42.189325,xemayBigPlate18_jpg.rf.9eb54064f9b30795d14a040febd9a287.jpg,2,"[{'confidence': 0.9981603026390076, 'x_min': 182, 'y_min': 199, 'x_max': 325, 'y_max': 313}, {'confidence': 0.34353572130203247, 'x_min': 252, 'y_min': 198, 'x_max': 393, 'y_max': 298}]",success
 2026-03-26T17:46:11.074059,xemayBigPlate18_jpg.rf.9eb54064f9b30795d14a040febd9a287.jpg,2,"[{'confidence': 0.9981603026390076, 'x_min': 182, 'y_min': 199, 'x_max': 325, 'y_max': 313}, {'confidence': 0.34353572130203247, 'x_min': 252, 'y_min': 198, 'x_max': 393, 'y_max': 298}]",success
 2026-03-26T19:26:32.733006,xemayBigPlate98_jpg.rf.c180399ed5b03f5c5598724709680a80.jpg,2,"[{'confidence': 0.9452201724052429, 'x_min': 232, 'y_min': 202, 'x_max': 323, 'y_max': 291}, {'confidence': 0.9211866855621338, 'x_min': 233, 'y_min': 239, 'x_max': 325, 'y_max': 329}]",success
+2026-03-26T20:07:49.827201,xemayBigPlate62_jpg.rf.f4b9d3dac1768f8148885e3d96fe4896.jpg,1,"[{'confidence': 0.9653820395469666, 'x_min': 176, 'y_min': 290, 'x_max': 337, 'y_max': 402}]",success
+2026-03-26T20:08:18.961109,Iconic_image_for_city_streets.jpg,0,[],success
+2026-03-26T20:10:11.905752,pic_124_jpg.rf.8c18c0921e223fcba41fa252c2f2b6d1.jpg,0,[],success
+2026-03-26T20:10:27.435406,xemay602_jpg.rf.2dd771a0a29a3ba15bc93743adb16911.jpg,1,"[{'confidence': 0.9898061156272888, 'x_min': 197, 'y_min': 57, 'x_max': 284, 'y_max': 132}]",success
+2026-03-26T20:10:54.080118,rotatengoaigiao3_jpg.rf.80266e9d37279da25751693135b056f2.jpg,0,[],success
+2026-03-26T20:11:09.950295,xemay1582_jpg.rf.1fd3f4db5f32d029e71005a215f4dbeb.jpg,1,"[{'confidence': 0.9917974472045898, 'x_min': 183, 'y_min': 179, 'x_max': 266, 'y_max': 244}]",success
+2026-03-26T20:14:06.386611,xemayBigPlate59_jpg.rf.85beb431382f08a09668b6b6ecd3be98.jpg,1,"[{'confidence': 0.9903087019920349, 'x_min': 264, 'y_min': 235, 'x_max': 398, 'y_max': 327}]",success
+2026-03-26T20:14:06.388041,xemayBigPlate59_jpg.rf.85beb431382f08a09668b6b6ecd3be98.jpg,/Users/mohamedaitsidihou/Documents/plate-detection-spark/plate-detection-spark/3-web-interface/history_images/20260326_201406_6e28d562.jpg,1,success,"[{'confidence': 0.9903087019920349, 'x_min': 264, 'y_min': 235, 'x_max': 398, 'y_max': 327}]"
+2026-03-26T20:15:01.608694,nob.jpg,0,[],success
+2026-03-26T20:15:01.610622,nob.jpg,/Users/mohamedaitsidihou/Documents/plate-detection-spark/plate-detection-spark/3-web-interface/history_images/20260326_201501_b6062c4b.jpg,0,success,[]

@@ -62,7 +62,7 @@ Thumbs.db
 *.swp
 
 # Model outputs / checkpoints
-checkpoints/
+#checkpoints/
 saved_model/
 results/
 data/
