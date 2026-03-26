@@ -27,7 +27,6 @@ metastore_db/
 derby.log
 
 # Data files (trop lourds pour git)
-*.csv
 *.parquet
 *.json
 *.zip
@@ -65,5 +64,5 @@ Thumbs.db
 # Model outputs / checkpoints
 checkpoints/
 saved_model/
-output/
 results/
+data/

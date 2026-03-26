@@ -10,10 +10,12 @@ Approche SSD (Single Shot MultiBox Detector) :
   - Les bounding boxes (cx, cy, w, h) associées à chaque image sont regroupées dans un tableau (encodé en JSON).
   - Le résultat final est exporté en format CSV.
 
-Format du CSV produit :
-  image_name | split_id | bboxes_json | image_base64
-  - bboxes_json  : Chaine JSON contenant la liste des bboxes. Chaque bbox est [class_id, cx_norm, cy_norm, w_norm, h_norm].
-  - image_base64 : Image 300x300 encodée en JPEG, puis en chaine Base64.
+Format du fichier Parquet produit :
+  image_name | split_id | images | cls_targets | reg_targets | pos_mask
+  - images      : Image 256x256 en format binaire (JPEG).
+  - cls_targets : Liste (Array) des numéros de classes.
+  - reg_targets : Liste (Array) des bboxes [cx, cy, w, h].
+  - pos_mask    : Liste (Array) des masques d'objet (1.0).
 """
 
 import io
@@ -29,10 +31,10 @@ from PIL import Image
 # PARAMÈTRES GLOBAUX
 # ─────────────────────────────────────────────────────────────────
 DATASET    = "../license-plate-detection-dataset-10125-images"
-IMG_SIZE   = 300   # Résolution standard pour beaucoup de modèles SSD (ex: 300x300)
+IMG_SIZE   = 256   # Résolution du modèle SSD-CNN-256
 
-OUTPUT_DIR = Path("output_ssd_csv") # Nouveau dossier pour ne pas écraser l'ancien
-OUTPUT_DIR.mkdir(exist_ok=True)
+OUTPUT_DIR = Path("data/processed") # Enregistrement dans le dossier courant
+OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 
 # ─────────────────────────────────────────────────────────────────
 # Démarrage Spark
@@ -47,12 +49,12 @@ spark = (
     .getOrCreate()
 )
 spark.sparkContext.setLogLevel("WARN")
-print("🚀 SparkSession démarrée (Mode SSD, Export CSV)\n")
+print("SparkSession démarrée (Mode SSD, Export Parquet)\n")
 
 # ─────────────────────────────────────────────────────────────────
 # 1. Lecture des images au format binaire
 # ─────────────────────────────────────────────────────────────────
-print("📸 Lecture des images avec binaryFile...")
+print("Lecture des images avec binaryFile...")
 df_images = (
     spark.read.format("binaryFile")
     .load([
@@ -72,7 +74,7 @@ df_images = (
 # ─────────────────────────────────────────────────────────────────
 # 2. Lecture, Parsing et Regroupement des Labels YOLO
 # ─────────────────────────────────────────────────────────────────
-print("🏷️ Lecture et regroupement des labels YOLO...")
+print("Lecture et regroupement des labels YOLO...")
 df_labels_raw = (
     spark.read.text([
         f"{DATASET}/train/labels/*.txt",
@@ -96,25 +98,32 @@ df_labels_parsed = (
     .dropna()
 )
 
-# On groupe par image : une image contient une liste (Array) de bounding boxes
+# On groupe par image : séparation en cls_targets, reg_targets et pos_mask selon le format attendu
 df_bboxes = (
     df_labels_parsed
-    .withColumn("bbox", F.array("class_id", "cx_norm", "cy_norm", "w_norm", "h_norm"))
+    .withColumn("reg_target", F.array("cx_norm", "cy_norm", "w_norm", "h_norm"))
+    .withColumn("pos_mask", F.lit(1.0).cast(FloatType()))
     .groupBy("image_name")
-    .agg(F.collect_list("bbox").alias("bboxes"))
+    .agg(
+        F.collect_list("class_id").alias("cls_targets"),
+        F.collect_list("reg_target").alias("reg_targets"),
+        F.collect_list("pos_mask").alias("pos_mask")
+    )
 )
 
 # ─────────────────────────────────────────────────────────────────
 # 3. Jointure Images & Labels
 # ─────────────────────────────────────────────────────────────────
-print("🔗 Jointure entre images et annotations...")
+print("Jointure entre images et annotations...")
 df_joined = df_images.join(df_bboxes, on="image_name", how="left")
 
 # Remplir les images sans labels (uniquement du fond) avec une liste vide
 # Un SSD gère très bien les images sans objets (elles servent d'exemples négatifs)
-df_joined = df_joined.withColumn(
-    "bboxes", 
-    F.when(F.col("bboxes").isNull(), F.array()).otherwise(F.col("bboxes"))
+df_joined = (
+    df_joined
+    .withColumn("cls_targets", F.when(F.col("cls_targets").isNull(), F.array()).otherwise(F.col("cls_targets")))
+    .withColumn("reg_targets", F.when(F.col("reg_targets").isNull(), F.array()).otherwise(F.col("reg_targets")))
+    .withColumn("pos_mask", F.when(F.col("pos_mask").isNull(), F.array()).otherwise(F.col("pos_mask")))
 )
 
 # ─────────────────────────────────────────────────────────────────
@@ -136,21 +145,18 @@ def resize_image(content):
     except Exception:
         return None
 
-print(f"🖼️ Redimensionnement des images en {IMG_SIZE}x{IMG_SIZE}...")
+print(f"Redimensionnement des images en {IMG_SIZE}x{IMG_SIZE}...")
 df_final = (
     df_joined
-    .withColumn("image_bytes", resize_image("raw_content"))
-    # Encodage en Base64 pour la compatibilité CSV et JSON pour les bboxes
-    .withColumn("image_base64", F.base64(F.col("image_bytes")))
-    .withColumn("bboxes_json", F.to_json(F.col("bboxes")))
-    .drop("raw_content", "image_bytes", "bboxes")
-    .filter(F.col("image_base64").isNotNull())
+    .withColumn("images", resize_image("raw_content"))
+    .drop("raw_content")
+    .filter(F.col("images").isNotNull())
 )
 
 # ─────────────────────────────────────────────────────────────────
-# 5. Export des données par split (Format CSV)
+# 5. Export des données par split (Format Parquet)
 # ─────────────────────────────────────────────────────────────────
-print("💾 Export du dataset SSD en CSV (coalesce pour n'avoir qu'un fichier)...")
+print("Export du dataset SSD en Parquet (coalesce pour un fichier par split)...")
 
 splits = {"train": 0, "valid": 1, "test": 2}
 stats = {}
@@ -160,32 +166,31 @@ for split_name, split_id in splits.items():
     df_split = df_final.filter(F.col("split_id") == split_id).drop("split_name", "split_id")
     
     tmp_dir = OUTPUT_DIR / f"tmp_{split_name}"
-    output_csv = OUTPUT_DIR / f"{split_name}.csv"
+    output_file = OUTPUT_DIR / f"{split_name}.parquet"
     
-    # Écriture csv
-    # L'option escape permet de gérer proprement les quotes du JSON dans le CSV
-    df_split.coalesce(1).write.mode("overwrite").option("escape", '"').csv(str(tmp_dir), header=True)
+    # Écriture parquet
+    df_split.coalesce(1).write.mode("overwrite").parquet(str(tmp_dir))
     
-    # Renommage du part-*.csv → train.csv / valid.csv / test.csv
-    part_file = next(tmp_dir.glob("part-*.csv"))
-    shutil.move(str(part_file), str(output_csv))
+    # Renommage du part-*.parquet → train.parquet / valid.parquet / test.parquet
+    part_file = next(tmp_dir.glob("part-*.parquet"))
+    shutil.move(str(part_file), str(output_file))
     shutil.rmtree(str(tmp_dir))
     
     # On force un décompte action() pour avoir les stats
-    nb = spark.read.option("escape", '"').csv(str(output_csv), header=True).count()
+    nb = spark.read.parquet(str(output_file)).count()
     stats[split_name] = nb
-    print(f"   ✅ {split_name}.csv  → {nb} images")
+    print(f"   ✅ {split_name}.parquet  → {nb} images")
 
 print(f"\n{'=' * 55}")
-print(f"✅ Prétraitement SSD terminé !")
+print(f"Prétraitement SSD terminé !")
 print(f"{'=' * 55}")
 print(f"   Dossier         : {OUTPUT_DIR.resolve()}/")
 print(f"   Train images    : {stats['train']}")
 print(f"   Valid images    : {stats['valid']}")
 print(f"   Test images     : {stats['test']}")
-print(f"   Format d'image  : {IMG_SIZE}×{IMG_SIZE} encodées en JPEG Base64")
-print(f"   Format de table : [image_name | bboxes_json | image_base64]")
+print(f"   Format d'image  : {IMG_SIZE}×{IMG_SIZE} encodées en binaire (JPEG)")
+print(f"   Format de table : [image_name | images | cls_targets | reg_targets | pos_mask]")
 print(f"{'=' * 55}")
 
 spark.stop()
-print("\n🏁 SparkSession arrêtée.")
+print("\nSparkSession arrêtée.")
