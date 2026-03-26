@@ -25,3 +25,4 @@ timestamp,image_name,nb_plates,detections,status
 2026-03-26T16:33:07.435713,unnamed.jpg,0,[],success
 2026-03-26T17:41:42.189325,xemayBigPlate18_jpg.rf.9eb54064f9b30795d14a040febd9a287.jpg,2,"[{'confidence': 0.9981603026390076, 'x_min': 182, 'y_min': 199, 'x_max': 325, 'y_max': 313}, {'confidence': 0.34353572130203247, 'x_min': 252, 'y_min': 198, 'x_max': 393, 'y_max': 298}]",success
 2026-03-26T17:46:11.074059,xemayBigPlate18_jpg.rf.9eb54064f9b30795d14a040febd9a287.jpg,2,"[{'confidence': 0.9981603026390076, 'x_min': 182, 'y_min': 199, 'x_max': 325, 'y_max': 313}, {'confidence': 0.34353572130203247, 'x_min': 252, 'y_min': 198, 'x_max': 393, 'y_max': 298}]",success
+2026-03-26T19:26:32.733006,xemayBigPlate98_jpg.rf.c180399ed5b03f5c5598724709680a80.jpg,2,"[{'confidence': 0.9452201724052429, 'x_min': 232, 'y_min': 202, 'x_max': 323, 'y_max': 291}, {'confidence': 0.9211866855621338, 'x_min': 233, 'y_min': 239, 'x_max': 325, 'y_max': 329}]",success
