@@ -61,6 +61,8 @@ jupyter notebook training.ipynb
 ```
 
 ### Étape 3 — Interface Web
+
+- Pour lancer l'API :
 ```bash
 cd 3-web-interface
 pip install -r requirements.txt
@@ -68,6 +70,13 @@ python app.py
 # → http://localhost:5000
 ```
 
+- Pour lancer l'interface : 
+```bash
+cd 3-web-interface
+cd StreamLit_App
+streamlit run app.py
+# → http://localhost:8502
+```
 ---
 
 ## 🔗 Pages de l'interface web
