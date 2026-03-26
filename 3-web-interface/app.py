@@ -1,326 +1,509 @@
-"""
-Microservice 3 — Interface Web
-================================
-Flask API servant :
-  - /           → Dashboard EDA & visualisations
-  - /predict    → Prédiction sur image uploadée (YOLOv8)
-  - /api/stats  → JSON des statistiques du dataset
-"""
-
-import os
-import io
-import base64
-import json
-from pathlib import Path
-
+import streamlit as st
+import requests
 import pandas as pd
-import numpy as np
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-import seaborn as sns
+import base64
+import datetime
+from io import BytesIO
 from PIL import Image
-from flask import Flask, render_template, request, jsonify, send_from_directory
-from ultralytics import YOLO
 
-# ─────────────────────────────────────────────
-# Configuration
-# ─────────────────────────────────────────────
-BASE_DIR    = Path(__file__).parent
-CSV_PATH    = BASE_DIR / "../1-preprocessing-pyspark/output/dataset_ready.csv"
-MODEL_PATH  = BASE_DIR / "model/best.pt"
-UPLOAD_DIR  = BASE_DIR / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
+st.markdown("""
+<style>
+#MainMenu {visibility: hidden;}
+header {visibility: hidden;}
+footer {visibility: hidden;}
+</style>
+""", unsafe_allow_html=True)
 
-app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max upload
+# =========================================================
+# CONFIG
+# =========================================================
+API_URL = "http://localhost:5000"
 
-@app.template_filter("format_number")
-def format_number(value):
+st.set_page_config(
+    page_title="License Plate Detection",
+    page_icon="🚗",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+# =========================================================
+# CSS MODERNE (INCHANGÉ)
+# =========================================================
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+html, body, [class*="css"]  {
+    font-family: 'Inter', sans-serif;
+}
+
+.stApp {
+    background:
+        radial-gradient(circle at top left, rgba(99,102,241,0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(6,182,212,0.16), transparent 25%),
+        linear-gradient(135deg, #0b1120 0%, #111827 45%, #0f172a 100%);
+    color: #e5e7eb;
+}
+
+.block-container {
+    padding-top: 1.5rem;
+    padding-bottom: 2rem;
+    max-width: 1400px;
+}
+
+.main-title {
+    font-size: 2.2rem;
+    font-weight: 800;
+    background: linear-gradient(90deg, #a78bfa, #22d3ee, #34d399);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.2rem;
+}
+
+.subtitle {
+    color: #94a3b8;
+    font-size: 1rem;
+    margin-bottom: 1.2rem;
+}
+
+.card {
+    background: rgba(15, 23, 42, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 22px;
+    padding: 1.2rem 1.2rem;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.20);
+    animation: fadeUp 0.55s ease;
+    margin-bottom: 1rem;
+}
+
+.kpi-card {
+    background: linear-gradient(135deg, rgba(99,102,241,0.20), rgba(6,182,212,0.10));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 20px;
+    padding: 1rem 1.1rem;
+    min-height: 115px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    animation: fadeUp 0.6s ease;
+}
+
+.kpi-title {
+    color: #94a3b8;
+    font-size: 0.92rem;
+    font-weight: 600;
+    margin-bottom: 0.35rem;
+}
+
+.kpi-value {
+    font-size: 1.7rem;
+    font-weight: 800;
+    color: #f8fafc;
+}
+
+.kpi-sub {
+    color: #cbd5e1;
+    font-size: 0.85rem;
+    margin-top: 0.3rem;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0.65rem 1rem;
+    border-radius: 999px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    border: 1px solid rgba(255,255,255,0.10);
+}
+
+.status-on {
+    background: rgba(16, 185, 129, 0.12);
+    color: #34d399;
+}
+
+.status-off {
+    background: rgba(239, 68, 68, 0.12);
+    color: #f87171;
+}
+
+.section-title {
+    font-size: 1.08rem;
+    font-weight: 700;
+    color: #f8fafc;
+    margin-bottom: 0.8rem;
+}
+
+.small-muted {
+    color: #94a3b8;
+    font-size: 0.92rem;
+}
+
+.prediction-box {
+    background: linear-gradient(135deg, rgba(99,102,241,0.16), rgba(34,211,238,0.08));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    padding: 0.9rem 1rem;
+    margin-top: 0.6rem;
+}
+
+.prediction-chip {
+    display: inline-block;
+    background: rgba(34, 211, 238, 0.12);
+    color: #67e8f9;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-right: 0.45rem;
+    margin-bottom: 0.45rem;
+    border: 1px solid rgba(103,232,249,0.18);
+}
+
+.history-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 16px;
+    padding: 0.9rem;
+    margin-bottom: 0.75rem;
+    animation: fadeUp 0.55s ease;
+}
+
+.history-title {
+    font-weight: 700;
+    color: #f8fafc;
+    margin-bottom: 0.2rem;
+}
+
+.history-meta {
+    color: #94a3b8;
+    font-size: 0.84rem;
+}
+
+hr.custom {
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(148,163,184,0.25), transparent);
+    margin: 1rem 0 0.7rem 0;
+}
+
+.stButton > button {
+    width: 100%;
+    border: none;
+    border-radius: 14px;
+    padding: 0.85rem 1rem;
+    font-weight: 800;
+    color: white;
+    background: linear-gradient(90deg, #6366f1, #06b6d4);
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.28);
+    transition: all 0.25s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.06);
+}
+
+[data-testid="stFileUploader"] {
+    background: rgba(255,255,255,0.03);
+    border: 1px dashed rgba(148,163,184,0.26);
+    border-radius: 16px;
+    padding: 0.6rem;
+}
+
+div[data-testid="stMetric"] {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    padding: 12px;
+    border-radius: 16px;
+}
+
+@keyframes fadeUp {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
+# =========================================================
+# STATE
+# =========================================================
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+# =========================================================
+# HELPERS
+# =========================================================
+def check_api_health():
     try:
-        return f"{int(value):,}".replace(",", "\u202f")
-    except (ValueError, TypeError):
-        return value
-
-sns.set_theme(style="darkgrid")
-
-# ─────────────────────────────────────────────
-# Chargement modèle & données
-# ─────────────────────────────────────────────
-df = None
-model = None
-
-def load_data():
-    global df
-    if CSV_PATH.exists():
-        df = pd.read_csv(CSV_PATH)
-        print(f"✅ CSV chargé : {df.shape}")
-    else:
-        print(f"⚠️  CSV introuvable : {CSV_PATH}")
-
-def load_model():
-    global model
-    if MODEL_PATH.exists():
-        model = YOLO(str(MODEL_PATH))
-        print("✅ Modèle chargé")
-    else:
-        print(f"⚠️  Modèle introuvable : {MODEL_PATH} — entraîne d'abord le Microservice 2")
-
-load_data()
-load_model()
-
-# ─────────────────────────────────────────────
-# Helpers — génération de graphes en base64
-# ─────────────────────────────────────────────
-def fig_to_b64(fig):
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=120, bbox_inches="tight",
-                facecolor="#0f172a", edgecolor="none")
-    plt.close(fig)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode()
-
-DARK_BG  = "#0f172a"
-CARD_BG  = "#1e293b"
-ACCENT1  = "#6366f1"
-ACCENT2  = "#06b6d4"
-ACCENT3  = "#10b981"
-ACCENT4  = "#f59e0b"
-TEXT_CLR = "#e2e8f0"
-
-def make_pie_split():
-    if df is None: return ""
-    counts = df.groupby("split")["image_name"].nunique()
-    fig, ax = plt.subplots(figsize=(5, 4), facecolor=DARK_BG)
-    ax.set_facecolor(DARK_BG)
-    wedges, texts, autotexts = ax.pie(
-        counts.values, labels=counts.index, autopct="%1.1f%%",
-        colors=[ACCENT1, ACCENT2, ACCENT3], textprops={"color": TEXT_CLR}
-    )
-    for at in autotexts: at.set_color(DARK_BG)
-    ax.set_title("Répartition Train / Valid / Test", color=TEXT_CLR, fontsize=13)
-    return fig_to_b64(fig)
-
-def make_bbox_size_bar():
-    if df is None: return ""
-    counts = df["bbox_size_category"].value_counts()
-    fig, ax = plt.subplots(figsize=(5, 4), facecolor=DARK_BG)
-    ax.set_facecolor(CARD_BG)
-    bars = ax.bar(counts.index, counts.values,
-                  color=[ACCENT1, ACCENT2, ACCENT3], edgecolor="none", width=0.5)
-    ax.set_title("Distribution tailles BBox", color=TEXT_CLR, fontsize=13)
-    ax.tick_params(colors=TEXT_CLR)
-    ax.spines[:].set_visible(False)
-    for bar in bars:
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 20,
-                f"{int(bar.get_height()):,}", ha="center", color=TEXT_CLR, fontsize=10)
-    return fig_to_b64(fig)
-
-def make_aspect_ratio_hist():
-    if df is None: return ""
-    fig, ax = plt.subplots(figsize=(5, 4), facecolor=DARK_BG)
-    ax.set_facecolor(CARD_BG)
-    ax.hist(df["aspect_ratio"].dropna(), bins=60, color=ACCENT2, alpha=0.85, edgecolor="none")
-    ax.set_title("Distribution Aspect Ratio (w/h)", color=TEXT_CLR, fontsize=13)
-    ax.set_xlabel("Ratio", color=TEXT_CLR)
-    ax.tick_params(colors=TEXT_CLR)
-    ax.spines[:].set_visible(False)
-    return fig_to_b64(fig)
-
-def make_heatmap():
-    if df is None: return ""
-    fig, ax = plt.subplots(figsize=(5, 4), facecolor=DARK_BG)
-    ax.set_facecolor(DARK_BG)
-    h = ax.hist2d(df["cx_norm"].dropna(), df["cy_norm"].dropna(), bins=50, cmap="plasma")
-    fig.colorbar(h[3], ax=ax, label="Densité").ax.yaxis.set_tick_params(color=TEXT_CLR)
-    ax.set_title("Heatmap positions centres BBox", color=TEXT_CLR, fontsize=13)
-    ax.set_xlabel("cx (normalisé)", color=TEXT_CLR)
-    ax.set_ylabel("cy (normalisé)", color=TEXT_CLR)
-    ax.tick_params(colors=TEXT_CLR)
-    ax.spines[:].set_visible(False)
-    return fig_to_b64(fig)
-
-def make_bbox_area_boxplot():
-    if df is None: return ""
-    fig, ax = plt.subplots(figsize=(5, 4), facecolor=DARK_BG)
-    ax.set_facecolor(CARD_BG)
-    data = [df[df["split"] == s]["bbox_area_norm"].dropna().values for s in ["train", "valid", "test"]]
-    bp = ax.boxplot(data, patch_artist=True, labels=["Train", "Valid", "Test"],
-                    medianprops=dict(color=ACCENT4, linewidth=2))
-    for patch, color in zip(bp["boxes"], [ACCENT1, ACCENT2, ACCENT3]):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
-    ax.set_title("Aire normalisée BBox par split", color=TEXT_CLR, fontsize=13)
-    ax.tick_params(colors=TEXT_CLR)
-    ax.spines[:].set_visible(False)
-    return fig_to_b64(fig)
-
-def make_num_boxes_hist():
-    if df is None: return ""
-    img_boxes = df.groupby("image_name")["num_boxes"].first()
-    fig, ax = plt.subplots(figsize=(5, 4), facecolor=DARK_BG)
-    ax.set_facecolor(CARD_BG)
-    ax.hist(img_boxes, bins=range(0, img_boxes.max()+2), color=ACCENT3, alpha=0.85, edgecolor="none")
-    ax.set_title("Nb de plaques par image", color=TEXT_CLR, fontsize=13)
-    ax.set_xlabel("Nombre de bboxes", color=TEXT_CLR)
-    ax.tick_params(colors=TEXT_CLR)
-    ax.spines[:].set_visible(False)
-    return fig_to_b64(fig)
-
-# ─────────────────────────────────────────────
-# Routes
-# ─────────────────────────────────────────────
-@app.route("/")
-def index():
-    charts = {
-        "pie_split":       make_pie_split(),
-        "bbox_size":       make_bbox_size_bar(),
-        "aspect_ratio":    make_aspect_ratio_hist(),
-        "heatmap":         make_heatmap(),
-        "bbox_area":       make_bbox_area_boxplot(),
-        "num_boxes":       make_num_boxes_hist(),
+        r = requests.get(f"{API_URL}/api/health", timeout=2)
+        if r.status_code == 200:
+            data = r.json()
+            return {
+                "online": True,
+                "model_loaded": data.get("model_loaded", False),
+                "data_loaded": data.get("data_loaded", False)
+            }
+    except Exception:
+        pass
+    return {
+        "online": False,
+        "model_loaded": False,
+        "data_loaded": False
     }
-    stats = {}
-    if df is not None:
-        stats = {
-            "total_images":  int(df["image_name"].nunique()),
-            "total_boxes":   len(df),
-            "avg_boxes":     round(df.groupby("image_name")["num_boxes"].first().mean(), 2),
-            "mean_area":     round(float(df["bbox_area_norm"].mean()), 4),
-            "model_ready":   model is not None,
+
+def get_stats():
+    try:
+        r = requests.get(f"{API_URL}/api/stats", timeout=3)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    return None
+
+def decode_base64_image(base64_string):
+    image_bytes = base64.b64decode(base64_string)
+    return Image.open(BytesIO(image_bytes))
+
+def predict_image(uploaded_file):
+    try:
+        files = {
+            "file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)
         }
-    return render_template("index.html", charts=charts, stats=stats)
+        r = requests.post(f"{API_URL}/api/predict", files=files, timeout=120)
+        return r
+    except Exception:
+        return None
 
-
-@app.route("/predict", methods=["GET", "POST"])
-def predict():
-    prediction = None
-    result_img = None
-    error = None
-
-    if request.method == "POST":
-        if "file" not in request.files:
-            error = "Aucun fichier fourni."
-        else:
-            file = request.files["file"]
-            if file.filename == "":
-                error = "Fichier vide."
-            else:
-                # Sauvegarde temporaire
-                img_path = UPLOAD_DIR / file.filename
-                file.save(str(img_path))
-
-                if model is None:
-                    error = "⚠️ Modèle non chargé. Lance d'abord le Microservice 2."
-                else:
-                    try:
-                        results = model.predict(str(img_path), conf=0.25, verbose=False)
-                        result = results[0]
-
-                        # Image annotée en base64
-                        img_annotated = result.plot()[:, :, ::-1]
-                        pil_img = Image.fromarray(img_annotated)
-                        buf = io.BytesIO()
-                        pil_img.save(buf, format="PNG")
-                        buf.seek(0)
-                        result_img = base64.b64encode(buf.read()).decode()
-
-                        # Détections
-                        boxes = result.boxes
-                        detections = []
-                        for box in boxes:
-                            detections.append({
-                                "confidence": round(float(box.conf[0]), 3),
-                                "x_min": round(float(box.xyxy[0][0]), 1),
-                                "y_min": round(float(box.xyxy[0][1]), 1),
-                                "x_max": round(float(box.xyxy[0][2]), 1),
-                                "y_max": round(float(box.xyxy[0][3]), 1),
-                            })
-                        prediction = {
-                            "filename": file.filename,
-                            "nb_plates": len(detections),
-                            "detections": detections,
-                        }
-                    except Exception as e:
-                        error = f"Erreur lors de la prédiction : {e}"
-
-    return render_template("predict.html",
-                           prediction=prediction,
-                           result_img=result_img,
-                           error=error)
-
-
-@app.route("/api/stats")
-def api_stats():
-    if df is None:
-        return jsonify({"error": "CSV non chargé"}), 404
-    stats = {
-        "total_images": int(df["image_name"].nunique()),
-        "total_boxes": len(df),
-        "splits": df.groupby("split")["image_name"].nunique().to_dict(),
-        "bbox_size_dist": df["bbox_size_category"].value_counts().to_dict(),
-        "avg_aspect_ratio": round(float(df["aspect_ratio"].mean()), 4),
-        "avg_bbox_area_norm": round(float(df["bbox_area_norm"].mean()), 4),
-    }
-    return jsonify(stats)
-
-@app.route("/api/health", methods=["GET"])
-def api_health():
-    return jsonify({
-        "status": "ok",
-        "model_loaded": model is not None,
-        "data_loaded": df is not None
+def add_to_history(filename, nb_plates, status, detections=None):
+    st.session_state.history.insert(0, {
+        "datetime": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        "filename": filename,
+        "nb_plates": nb_plates,
+        "status": status,
+        "detections": detections if detections else []
     })
 
+# =========================================================
+# HEADER
+# =========================================================
+api_state = check_api_health()
+stats = get_stats()
 
-@app.route("/api/predict", methods=["POST"])
-def api_predict():
-    if "file" not in request.files:
-        return jsonify({"error": "Aucun fichier fourni"}), 400
+left_header, right_header = st.columns([4, 1.2])
 
-    file = request.files["file"]
+with left_header:
+    st.markdown('<div class="main-title">🚗 License Plate Detection</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="subtitle">Interface for prediction from one or multiple images.</div>',
+        unsafe_allow_html=True
+    )
 
-    if file.filename == "":
-        return jsonify({"error": "Nom de fichier vide"}), 400
+with right_header:
+    status_class = "status-on" if api_state["online"] else "status-off"
+    status_icon = "🟢" if api_state["online"] else "🔴"
+    status_text = "Online API !" if api_state["online"] else "Offline API !"
 
-    if model is None:
-        return jsonify({"error": "Modèle non chargé"}), 500
+    st.markdown(
+        f"""
+        <div class="card" style="text-align:center;">
+            <div class="status-pill {status_class}">{status_icon} {status_text}</div>
+            <div style="height:10px;"></div>
+            <div class="small-muted">Model: {"loaded" if api_state["model_loaded"] else "not loaded"}</div>
+            <div class="small-muted">Data: {"loaded" if api_state["data_loaded"] else "not loaded"}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-    try:
-        img_path = UPLOAD_DIR / file.filename
-        file.save(str(img_path))
+# =========================================================
+# KPI
+# =========================================================
+k1, k2, k3, k4 = st.columns(4)
 
-        results = model.predict(str(img_path), conf=0.25, verbose=False)
-        result = results[0]
+total_images = stats.get("total_images", 0) if stats else 0
+total_boxes = stats.get("total_boxes", 0) if stats else 0
+avg_ratio = stats.get("avg_aspect_ratio", 0) if stats else 0
+avg_area = stats.get("avg_bbox_area_norm", 0) if stats else 0
 
-        detections = []
-        for box in result.boxes:
-            detections.append({
-                "confidence": round(float(box.conf[0]), 3),
-                "x_min": round(float(box.xyxy[0][0]), 1),
-                "y_min": round(float(box.xyxy[0][1]), 1),
-                "x_max": round(float(box.xyxy[0][2]), 1),
-                "y_max": round(float(box.xyxy[0][3]), 1),
-            })
+with k1:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">Dataset images</div>
+        <div class="kpi-value">{total_images}</div>
+        <div class="kpi-sub">Total available images</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        # image annotée en base64
-        img_annotated = result.plot()[:, :, ::-1]
-        pil_img = Image.fromarray(img_annotated)
-        buf = io.BytesIO()
-        pil_img.save(buf, format="PNG")
-        buf.seek(0)
-        annotated_b64 = base64.b64encode(buf.read()).decode()
+with k2:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">Bounding boxes</div>
+        <div class="kpi-value">{total_boxes}</div>
+        <div class="kpi-sub">Dataset annotations</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        return jsonify({
-            "filename": file.filename,
-            "nb_plates": len(detections),
-            "detections": detections,
-            "annotated_image": annotated_b64
-        })
+with k3:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">Average aspect ratio</div>
+        <div class="kpi-value">{avg_ratio}</div>
+        <div class="kpi-sub">Average width / height</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-    except Exception as e:
-        return jsonify({"error": f"Erreur prédiction : {str(e)}"}), 500
-    
-if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+with k4:
+    st.markdown(f"""
+    <div class="kpi-card">
+        <div class="kpi-title">Average bbox area</div>
+        <div class="kpi-value">{avg_area}</div>
+        <div class="kpi-sub">Average normalized bbox area</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
+
+# =========================================================
+# MAIN
+# =========================================================
+left_col, right_col = st.columns([2.1, 1])
+
+with left_col:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📤 Upload & prediction</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="small-muted">Upload one or more images then run license plate detection.</div>',
+        unsafe_allow_html=True
+    )
+
+    uploaded_files = st.file_uploader(
+        "Choose one or more images",
+        type=["jpg", "jpeg", "png"],
+        accept_multiple_files=True,
+        label_visibility="collapsed"
+    )
+
+    run_prediction = st.button("🔍 Run prediction")
+
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if run_prediction:
+        if not api_state["online"]:
+            st.error("Flask API is not reachable. Check that it is running on http://localhost:5000")
+        elif not api_state["model_loaded"]:
+            st.error("YOLO model is not loaded on the Flask side.")
+        elif not uploaded_files:
+            st.warning("Please upload at least one image.")
+        else:
+            for file in uploaded_files:
+                with st.spinner(f"Analyzing {file.name}..."):
+                    response = predict_image(file)
+
+                st.markdown('<div class="card">', unsafe_allow_html=True)
+                st.markdown(f'<div class="section-title">🖼️ Result — {file.name}</div>', unsafe_allow_html=True)
+
+                if response is None:
+                    st.error("Unable to contact the API.")
+                    add_to_history(file.name, 0, "API error")
+                elif response.status_code != 200:
+                    try:
+                        err = response.json().get("error", "Unknown error")
+                    except Exception:
+                        err = response.text
+                    st.error(err)
+                    add_to_history(file.name, 0, "Error")
+                else:
+                    data = response.json()
+
+                    col_img1, col_img2 = st.columns(2)
+
+                    with col_img1:
+                        st.image(Image.open(BytesIO(file.getvalue())), caption="Original image", use_container_width=True)
+
+                    with col_img2:
+                        if data.get("annotated_image"):
+                            st.image(decode_base64_image(data["annotated_image"]), caption="Annotated image", use_container_width=True)
+
+                    nb_plates = data.get("nb_plates", 0)
+                    detections = data.get("detections", [])
+
+                    st.markdown(f"""
+                    <div class="prediction-box">
+                        <div style="font-size:1rem; font-weight:800; color:#f8fafc;">
+                            Detected plates: {nb_plates}
+                        </div>
+                        <div class="small-muted" style="margin-top:6px;">
+                            Detection result for this image.
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    if detections:
+                        st.markdown("**Detection details**")
+
+                        rows = []
+                        for i, det in enumerate(detections, 1):
+                            rows.append({
+                                "Plate": f"Detection {i}",
+                                "Confidence": det["confidence"],
+                                "x_min": det["x_min"],
+                                "y_min": det["y_min"],
+                                "x_max": det["x_max"],
+                                "y_max": det["y_max"],
+                            })
+
+                        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+                    else:
+                        st.info("No license plate detected.")
+
+                    add_to_history(file.name, nb_plates, "Success", detections)
+
+                st.markdown('</div>', unsafe_allow_html=True)
+
+with right_col:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🕘 Prediction history</div>', unsafe_allow_html=True)
+    st.markdown('<div class="small-muted">Latest analyses performed in this session.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if st.session_state.history:
+        a, b = st.columns(2)
+        with a:
+            st.metric("Predictions", len(st.session_state.history))
+        with b:
+            st.metric("Detected plates", sum(x["nb_plates"] for x in st.session_state.history))
+
+        for item in st.session_state.history:
+            st.markdown(f"""
+            <div class="history-card">
+                <div class="history-title">{item["filename"]}</div>
+                <div class="history-meta">{item["datetime"]}</div>
+                <hr class="custom">
+                <div style="display:flex; justify-content:space-between;">
+                    <div>Detected plates</div>
+                    <div>{item["nb_plates"]}</div>
+                </div>
+                <div>{item["status"]}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.download_button(
+            "⬇️ Download history CSV",
+            data=pd.DataFrame(st.session_state.history).to_csv(index=False),
+            file_name="history.csv"
+        )
+    else:
+        st.markdown("""
+        <div class="history-card">
+            <div class="history-title">No predictions</div>
+            <div class="history-meta">History will appear here after first analysis.</div>
+        </div>
+        """, unsafe_allow_html=True)
