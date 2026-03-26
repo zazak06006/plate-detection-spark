@@ -63,7 +63,7 @@ def load_model():
     global model
     if MODEL_PATH.exists():
         model = YOLO(str(MODEL_PATH))
-        print("✅ Modèle YOLOv8 chargé")
+        print("✅ Modèle chargé")
     else:
         print(f"⚠️  Modèle introuvable : {MODEL_PATH} — entraîne d'abord le Microservice 2")
 
@@ -265,6 +265,62 @@ def api_stats():
     }
     return jsonify(stats)
 
+@app.route("/api/health", methods=["GET"])
+def api_health():
+    return jsonify({
+        "status": "ok",
+        "model_loaded": model is not None,
+        "data_loaded": df is not None
+    })
 
+
+@app.route("/api/predict", methods=["POST"])
+def api_predict():
+    if "file" not in request.files:
+        return jsonify({"error": "Aucun fichier fourni"}), 400
+
+    file = request.files["file"]
+
+    if file.filename == "":
+        return jsonify({"error": "Nom de fichier vide"}), 400
+
+    if model is None:
+        return jsonify({"error": "Modèle non chargé"}), 500
+
+    try:
+        img_path = UPLOAD_DIR / file.filename
+        file.save(str(img_path))
+
+        results = model.predict(str(img_path), conf=0.25, verbose=False)
+        result = results[0]
+
+        detections = []
+        for box in result.boxes:
+            detections.append({
+                "confidence": round(float(box.conf[0]), 3),
+                "x_min": round(float(box.xyxy[0][0]), 1),
+                "y_min": round(float(box.xyxy[0][1]), 1),
+                "x_max": round(float(box.xyxy[0][2]), 1),
+                "y_max": round(float(box.xyxy[0][3]), 1),
+            })
+
+        # image annotée en base64
+        img_annotated = result.plot()[:, :, ::-1]
+        pil_img = Image.fromarray(img_annotated)
+        buf = io.BytesIO()
+        pil_img.save(buf, format="PNG")
+        buf.seek(0)
+        annotated_b64 = base64.b64encode(buf.read()).decode()
+
+        return jsonify({
+            "filename": file.filename,
+            "nb_plates": len(detections),
+            "detections": detections,
+            "annotated_image": annotated_b64
+        })
+
+    except Exception as e:
+        return jsonify({"error": f"Erreur prédiction : {str(e)}"}), 500
+    
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
