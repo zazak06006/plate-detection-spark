@@ -220,17 +220,25 @@ async def predict_single(
         # Annoter l'image
         annotated = annotate_image(original_image, predictions['detections'])
 
-        # Encoder en base64
-        buffer = io.BytesIO()
-        annotated.save(buffer, format='JPEG', quality=90)
-        annotated_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+        # Sauvegarder les images sur le système de fichiers
+        from inference import save_images_to_filesystem
+        original_img_path, annotated_img_path = save_images_to_filesystem(
+            original_image, annotated, filename
+        )
 
-        # Sauvegarder dans l'historique
+        # Sauvegarder dans l'historique avec les chemins
         save_to_history(
             filename,
             predictions['nb_plates'],
-            predictions['detections']
+            predictions['detections'],
+            original_image_path=original_img_path,
+            annotated_image_path=annotated_img_path
         )
+
+        # Encoder en base64 pour la réponse (compatibilité)
+        buffer = io.BytesIO()
+        annotated.save(buffer, format='JPEG', quality=90)
+        annotated_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
 
         # Temps de traitement
         processing_time = (datetime.now() - start_time).total_seconds() * 1000
@@ -241,6 +249,8 @@ async def predict_single(
             "nb_plates": predictions['nb_plates'],
             "detections": predictions['detections'],
             "annotated_image": annotated_base64,
+            "annotated_image_path": annotated_img_path,
+            "original_image_path": original_img_path,
             "processing_time_ms": processing_time
         }
 

@@ -1,38 +1,14 @@
-timestamp,image_name,nb_plates,detections,status
-2026-03-26T16:16:40.103831,test.jpg,0,[],test
-2026-03-26T16:17:36.309763,test_0.jpg,0,[],success
-2026-03-26T16:17:36.370179,test_1.jpg,0,[],success
-2026-03-26T16:17:36.436126,test_2.jpg,0,[],success
-2026-03-26T16:17:42.355873,test_0.jpg,0,[],success
-2026-03-26T16:17:42.416665,test_1.jpg,0,[],success
-2026-03-26T16:17:42.487741,test_2.jpg,0,[],success
-2026-03-26T16:25:09.938291,xemayBigPlate99_jpg.rf.97062a8eeff071ce4806b98ad3e71d0f.jpg,2,"[{'confidence': 0.9893849492073059, 'x_min': 201, 'y_min': 221, 'x_max': 335, 'y_max': 320}, {'confidence': 0.8780730962753296, 'x_min': 202, 'y_min': 182, 'x_max': 325, 'y_max': 266}]",success
-2026-03-26T16:26:40.726188,pic_565_jpg.rf.f6d57de5e2723622ef5d4f61b1090230.jpg,2,"[{'confidence': 0.4528696835041046, 'x_min': 201, 'y_min': 176, 'x_max': 317, 'y_max': 221}, {'confidence': 0.37392479181289673, 'x_min': 158, 'y_min': 144, 'x_max': 271, 'y_max': 192}]",success
-2026-03-26T16:28:01.035115,Iconic_image_for_city_streets.jpg,0,[],success
-2026-03-26T16:28:12.737449,Iconic_image_for_city_streets.jpg,0,[],success
-2026-03-26T16:28:16.707462,Iconic_image_for_city_streets.jpg,0,[],success
-2026-03-26T16:28:18.617681,Iconic_image_for_city_streets.jpg,0,[],success
-2026-03-26T16:28:21.563925,Iconic_image_for_city_streets.jpg,0,[],success
-2026-03-26T16:29:12.515854,CarLongPlateGen3467_jpg.rf.ecf5c03325f34e8dde0edb38afb60c56.jpg,4,"[{'confidence': 0.9840827584266663, 'x_min': 161, 'y_min': 145, 'x_max': 255, 'y_max': 186}, {'confidence': 0.9562407732009888, 'x_min': 171, 'y_min': 180, 'x_max': 257, 'y_max': 223}, {'confidence': 0.9127625226974487, 'x_min': 189, 'y_min': 196, 'x_max': 290, 'y_max': 251}, {'confidence': 0.7410322427749634, 'x_min': 215, 'y_min': 173, 'x_max': 311, 'y_max': 226}]",success
-2026-03-26T16:30:56.623281,CarLongPlateGen3467_jpg.rf.ecf5c03325f34e8dde0edb38afb60c56.jpg,4,"[{'confidence': 0.9840827584266663, 'x_min': 161, 'y_min': 145, 'x_max': 255, 'y_max': 186}, {'confidence': 0.9562407732009888, 'x_min': 171, 'y_min': 180, 'x_max': 257, 'y_max': 223}, {'confidence': 0.9127625226974487, 'x_min': 189, 'y_min': 196, 'x_max': 290, 'y_max': 251}, {'confidence': 0.7410322427749634, 'x_min': 215, 'y_min': 173, 'x_max': 311, 'y_max': 226}]",success
-2026-03-26T16:31:01.589015,CarLongPlateGen3467_jpg.rf.ecf5c03325f34e8dde0edb38afb60c56.jpg,4,"[{'confidence': 0.9840827584266663, 'x_min': 161, 'y_min': 145, 'x_max': 255, 'y_max': 186}, {'confidence': 0.9562407732009888, 'x_min': 171, 'y_min': 180, 'x_max': 257, 'y_max': 223}, {'confidence': 0.9127625226974487, 'x_min': 189, 'y_min': 196, 'x_max': 290, 'y_max': 251}, {'confidence': 0.7410322427749634, 'x_min': 215, 'y_min': 173, 'x_max': 311, 'y_max': 226}]",success
-2026-03-26T16:31:07.218789,CarLongPlateGen3467_jpg.rf.ecf5c03325f34e8dde0edb38afb60c56.jpg,4,"[{'confidence': 0.9840827584266663, 'x_min': 161, 'y_min': 145, 'x_max': 255, 'y_max': 186}, {'confidence': 0.9562407732009888, 'x_min': 171, 'y_min': 180, 'x_max': 257, 'y_max': 223}, {'confidence': 0.9127625226974487, 'x_min': 189, 'y_min': 196, 'x_max': 290, 'y_max': 251}, {'confidence': 0.7410322427749634, 'x_min': 215, 'y_min': 173, 'x_max': 311, 'y_max': 226}]",success
-2026-03-26T16:31:12.037745,CarLongPlateGen3467_jpg.rf.ecf5c03325f34e8dde0edb38afb60c56.jpg,4,"[{'confidence': 0.9840827584266663, 'x_min': 161, 'y_min': 145, 'x_max': 255, 'y_max': 186}, {'confidence': 0.9562407732009888, 'x_min': 171, 'y_min': 180, 'x_max': 257, 'y_max': 223}, {'confidence': 0.9127625226974487, 'x_min': 189, 'y_min': 196, 'x_max': 290, 'y_max': 251}, {'confidence': 0.7410322427749634, 'x_min': 215, 'y_min': 173, 'x_max': 311, 'y_max': 226}]",success
-2026-03-26T16:31:43.373888,CarLongPlateGen1711_jpg.rf.a4d1f5b4a806aa43ae4b24f3f979c83e.jpg,3,"[{'confidence': 0.8024162650108337, 'x_min': 189, 'y_min': 186, 'x_max': 284, 'y_max': 220}, {'confidence': 0.41748109459877014, 'x_min': 273, 'y_min': 212, 'x_max': 353, 'y_max': 233}, {'confidence': 0.3764195442199707, 'x_min': 224, 'y_min': 180, 'x_max': 317, 'y_max': 217}]",success
-2026-03-26T16:32:09.282919,xemay424_jpg.rf.6ee2887c5e4e8dd45f69501451592b57.jpg,1,"[{'confidence': 0.9999363422393799, 'x_min': 169, 'y_min': 109, 'x_max': 263, 'y_max': 187}]",success
-2026-03-26T16:32:41.068857,archiPA.png,1,"[{'confidence': 0.4499887228012085, 'x_min': 623, 'y_min': 722, 'x_max': 820, 'y_max': 846}]",success
-2026-03-26T16:32:54.149430,better-caul-sall-banner.jpg,0,[],success
-2026-03-26T16:33:07.435713,unnamed.jpg,0,[],success
-2026-03-26T17:41:42.189325,xemayBigPlate18_jpg.rf.9eb54064f9b30795d14a040febd9a287.jpg,2,"[{'confidence': 0.9981603026390076, 'x_min': 182, 'y_min': 199, 'x_max': 325, 'y_max': 313}, {'confidence': 0.34353572130203247, 'x_min': 252, 'y_min': 198, 'x_max': 393, 'y_max': 298}]",success
-2026-03-26T17:46:11.074059,xemayBigPlate18_jpg.rf.9eb54064f9b30795d14a040febd9a287.jpg,2,"[{'confidence': 0.9981603026390076, 'x_min': 182, 'y_min': 199, 'x_max': 325, 'y_max': 313}, {'confidence': 0.34353572130203247, 'x_min': 252, 'y_min': 198, 'x_max': 393, 'y_max': 298}]",success
-2026-03-26T19:26:32.733006,xemayBigPlate98_jpg.rf.c180399ed5b03f5c5598724709680a80.jpg,2,"[{'confidence': 0.9452201724052429, 'x_min': 232, 'y_min': 202, 'x_max': 323, 'y_max': 291}, {'confidence': 0.9211866855621338, 'x_min': 233, 'y_min': 239, 'x_max': 325, 'y_max': 329}]",success
-2026-03-26T20:07:49.827201,xemayBigPlate62_jpg.rf.f4b9d3dac1768f8148885e3d96fe4896.jpg,1,"[{'confidence': 0.9653820395469666, 'x_min': 176, 'y_min': 290, 'x_max': 337, 'y_max': 402}]",success
-2026-03-26T20:08:18.961109,Iconic_image_for_city_streets.jpg,0,[],success
-2026-03-26T20:10:11.905752,pic_124_jpg.rf.8c18c0921e223fcba41fa252c2f2b6d1.jpg,0,[],success
-2026-03-26T20:10:27.435406,xemay602_jpg.rf.2dd771a0a29a3ba15bc93743adb16911.jpg,1,"[{'confidence': 0.9898061156272888, 'x_min': 197, 'y_min': 57, 'x_max': 284, 'y_max': 132}]",success
-2026-03-26T20:10:54.080118,rotatengoaigiao3_jpg.rf.80266e9d37279da25751693135b056f2.jpg,0,[],success
-2026-03-26T20:11:09.950295,xemay1582_jpg.rf.1fd3f4db5f32d029e71005a215f4dbeb.jpg,1,"[{'confidence': 0.9917974472045898, 'x_min': 183, 'y_min': 179, 'x_max': 266, 'y_max': 244}]",success
-2026-03-26T20:14:06.386611,xemayBigPlate59_jpg.rf.85beb431382f08a09668b6b6ecd3be98.jpg,1,"[{'confidence': 0.9903087019920349, 'x_min': 264, 'y_min': 235, 'x_max': 398, 'y_max': 327}]",success
-2026-03-26T20:15:01.608694,nob.jpg,0,[],success
-
-2026-03-26T20:31:21.807746,xemayBigPlate9_jpg.rf.f4c73aae67ab623c3bae59d30c777e7b.jpg,1,"[{'confidence': 0.9859212040901184, 'x_min': 209, 'y_min': 212, 'x_max': 341, 'y_max': 309}]",success
+timestamp,image_name,nb_plates,detections,status,original_image_path,annotated_image_path
+2026-03-26T20:48:12.132516,rotatequandoi56_jpg.rf.2b5c15ef533a91f3859692fd3f265df6.jpg,1,"[{'confidence': 0.7143539786338806, 'x_min': 361, 'y_min': 583, 'x_max': 491, 'y_max': 648}]",success,,images/2026/03/26/20260326_204812_58c73420/annotated.jpg
+2026-03-26T22:14:10.730914,00e8e5e79255536f_jpg.rf.04e24b86d0c062773ed207e247043b8c.jpg,1,"[{'confidence': 0.479772686958313, 'x_min': 470, 'y_min': 402, 'x_max': 588, 'y_max': 465}]",success,,
+2026-03-26T22:15:05.534088,CarLongPlate61_jpg.rf.a9a8d1c0ac304cf8a88f87b40ffa7ee6.jpg,0,[],success,,
+2026-03-26T22:15:15.966923,CarLongPlate61_jpg.rf.a9a8d1c0ac304cf8a88f87b40ffa7ee6.jpg,0,[],success,,
+2026-03-26T22:15:23.159790,CarLongPlate61_jpg.rf.a9a8d1c0ac304cf8a88f87b40ffa7ee6.jpg,0,[],success,,
+2026-03-26T22:15:42.950976,006a2f13b5b16c64_jpg.rf.1559f3f976bad6120d96f538829a549f.jpg,0,[],success,,
+2026-03-26T22:16:11.168313,CarLongPlateGen2591_jpg.rf.c624b1d31d4c7c0a598b0250a499d41f.jpg,1,"[{'confidence': 0.9515847563743591, 'x_min': 166, 'y_min': 181, 'x_max': 284, 'y_max': 242}]",success,,
+2026-03-26T22:21:08.121794,00c82d64185293a7_jpg.rf.6aaeb74faf1905eeee48dd4fb324e013.jpg,0,[],success,images/2026/03/26/20260326_222108_7c947d75/original.jpg,images/2026/03/26/20260326_222108_7c947d75/annotated.jpg
+2026-03-26T22:22:15.922684,00e8e5e79255536f_jpg.rf.04e24b86d0c062773ed207e247043b8c.jpg,1,"[{'confidence': 0.479772686958313, 'x_min': 470, 'y_min': 402, 'x_max': 588, 'y_max': 465}]",success,images/2026/03/26/20260326_222215_178b4172/original.jpg,images/2026/03/26/20260326_222215_178b4172/annotated.jpg
+2026-03-26T22:29:46.074608,00e8e5e79255536f_jpg.rf.04e24b86d0c062773ed207e247043b8c.jpg,1,"[{'confidence': 0.479772686958313, 'x_min': 470, 'y_min': 402, 'x_max': 588, 'y_max': 465}]",success,images/2026/03/26/20260326_222946_c4174989/original.jpg,images/2026/03/26/20260326_222946_c4174989/annotated.jpg
+2026-03-26T22:29:49.041417,CarLongPlate212_jpg.rf.f1856aee2196cf3863ccc30c37cd1ecd.jpg,0,[],success,images/2026/03/26/20260326_222949_11b1b475/original.jpg,images/2026/03/26/20260326_222949_11b1b475/annotated.jpg
+2026-03-26T22:31:17.716762,00e8e5e79255536f_jpg.rf.04e24b86d0c062773ed207e247043b8c.jpg,1,"[{'confidence': 0.479772686958313, 'x_min': 470, 'y_min': 402, 'x_max': 588, 'y_max': 465}]",success,images/2026/03/26/20260326_223117_ac1adbe2/original.jpg,images/2026/03/26/20260326_223117_ac1adbe2/annotated.jpg
+2026-03-26T22:31:20.174356,CarLongPlateGen2591_jpg.rf.c624b1d31d4c7c0a598b0250a499d41f.jpg,1,"[{'confidence': 0.9515847563743591, 'x_min': 166, 'y_min': 181, 'x_max': 284, 'y_max': 242}]",success,images/2026/03/26/20260326_223120_8b37a5be/original.jpg,images/2026/03/26/20260326_223120_8b37a5be/annotated.jpg

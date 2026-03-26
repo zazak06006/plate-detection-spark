@@ -28,7 +28,7 @@ from pyspark.sql.types import (
 # Import du module d'inférence
 from inference import (
     get_model, get_device, predict_single_image,
-    annotate_image, save_to_history, TRANSFORM
+    annotate_image, save_to_history, save_images_to_filesystem, TRANSFORM
 )
 
 
@@ -135,21 +135,28 @@ class SparkBatchProcessor:
                 # Annoter l'image
                 annotated = annotate_image(image, prediction['detections'])
 
-                # Encoder l'image annotée en base64
-                buffer = io.BytesIO()
-                annotated.save(buffer, format='JPEG', quality=90)
-                annotated_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+                # Sauvegarder sur le système de fichiers
+                original_img_path, annotated_img_path = save_images_to_filesystem(
+                    image, annotated, filename
+                )
 
                 result = {
                     "filename": filename,
                     "nb_plates": prediction['nb_plates'],
                     "detections": prediction['detections'],
-                    "annotated_image": annotated_base64,
+                    "annotated_image_path": annotated_img_path,
+                    "original_image_path": original_img_path,
                     "status": "success"
                 }
 
                 # Sauvegarder dans l'historique
-                save_to_history(filename, prediction['nb_plates'], prediction['detections'])
+                save_to_history(
+                    filename,
+                    prediction['nb_plates'],
+                    prediction['detections'],
+                    original_image_path=original_img_path,
+                    annotated_image_path=annotated_img_path
+                )
 
             except Exception as e:
                 result = {
@@ -234,19 +241,27 @@ def process_images_simple(
 
             annotated = annotate_image(image, prediction['detections'])
 
-            buffer = io.BytesIO()
-            annotated.save(buffer, format='JPEG', quality=90)
-            annotated_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
+            # Sauvegarder sur le système de fichiers
+            original_img_path, annotated_img_path = save_images_to_filesystem(
+                image, annotated, filename
+            )
 
             result = {
                 "filename": filename,
                 "nb_plates": prediction['nb_plates'],
                 "detections": prediction['detections'],
-                "annotated_image": annotated_base64,
+                "annotated_image_path": annotated_img_path,
+                "original_image_path": original_img_path,
                 "status": "success"
             }
 
-            save_to_history(filename, prediction['nb_plates'], prediction['detections'])
+            save_to_history(
+                filename,
+                prediction['nb_plates'],
+                prediction['detections'],
+                original_image_path=original_img_path,
+                annotated_image_path=annotated_img_path
+            )
 
         except Exception as e:
             result = {

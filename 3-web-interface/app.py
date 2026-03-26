@@ -292,6 +292,10 @@ def load_history_csv(limit: int = 30) -> List[Dict]:
         return []
 
     try:
+        # Importer la migration depuis inference
+        from inference import migrate_old_history_csv
+        migrate_old_history_csv()  # Effectuer migration si nécessaire
+
         entries = []
         with open(HISTORY_CSV, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
@@ -301,7 +305,9 @@ def load_history_csv(limit: int = 30) -> List[Dict]:
                     "filename": row.get('image_name', ''),
                     "nb_plates": int(row.get('nb_plates', 0)),
                     "status": row.get('status', 'unknown'),
-                    "detections": row.get('detections', '[]')
+                    "detections": row.get('detections', '[]'),
+                    "original_image_path": row.get('original_image_path', ''),
+                    "annotated_image_path": row.get('annotated_image_path', '')
                 })
         return list(reversed(entries[-limit:]))
     except Exception as e:
@@ -323,8 +329,25 @@ def get_history_stats() -> Dict:
 # ============================================================================
 # API HELPERS
 # ============================================================================
+def load_image_from_path(relative_path: str) -> Optional[Image.Image]:
+    """Charge une image depuis un chemin relatif"""
+    if not relative_path:
+        return None
+    try:
+        # Chemin absolu
+        abs_path = HISTORY_CSV.parent / relative_path
+        if abs_path.exists():
+            return Image.open(abs_path).convert('RGB')
+        else:
+            st.warning(f"Image not found: {relative_path}")
+            return None
+    except Exception as e:
+        st.warning(f"Error loading image: {e}")
+        return None
+
+
 def decode_base64_image(base64_string: str) -> Image.Image:
-    """Décode une image base64"""
+    """Décode une image base64 (pour compatibilité)"""
     image_bytes = base64.b64decode(base64_string)
     return Image.open(BytesIO(image_bytes))
 
@@ -517,7 +540,12 @@ with left_col:
 
                             with col2:
                                 # Image annotée
-                                if res.get("annotated_image"):
+                                if res.get("annotated_image_path"):
+                                    annotated_img = load_image_from_path(res["annotated_image_path"])
+                                    if annotated_img:
+                                        st.image(annotated_img, caption="Annotated")
+                                elif res.get("annotated_image"):
+                                    # Compatibilité: essayer le base64 aussi
                                     st.image(decode_base64_image(res["annotated_image"]), caption="Annotated")
 
                             # Détails
@@ -542,7 +570,16 @@ with left_col:
                             st.image(Image.open(BytesIO(file.getvalue())), caption="Original", use_container_width=True)
 
                         with col_img2:
-                            if result.get("annotated_image"):
+                            if result.get("annotated_image_path"):
+                                annotated_img = load_image_from_path(result["annotated_image_path"])
+                                if annotated_img:
+                                    st.image(
+                                        annotated_img,
+                                        caption="Annotated",
+                                        use_container_width=True
+                                    )
+                            elif result.get("annotated_image"):
+                                # Compatibilité: essayer le base64 aussi
                                 st.image(
                                     decode_base64_image(result["annotated_image"]),
                                     caption="Annotated",
@@ -601,18 +638,23 @@ with right_col:
             except Exception:
                 formatted_dt = item["datetime"][:16] if item["datetime"] else "Unknown"
 
-            st.markdown(f"""
-            <div class="history-card">
-                <div class="history-title">{item["filename"]}</div>
-                <div class="history-meta">{formatted_dt}</div>
-                <hr class="custom">
-                <div style="display:flex; justify-content:space-between;">
-                    <div>Plates detected</div>
-                    <div><strong>{item["nb_plates"]}</strong></div>
-                </div>
-                <div class="small-muted">{item["status"]}</div>
-            </div>
-            """, unsafe_allow_html=True)
+            with st.expander(f"🖼️ {item['filename']} — {item['nb_plates']} plates", expanded=False):
+                col1, col2 = st.columns([1, 1])
+
+                with col1:
+                    st.markdown(f"**{formatted_dt}**")
+                    st.markdown(f"Status: `{item['status']}`")
+                    if item.get("detections") and item["detections"] != "[]":
+                        st.markdown(f"**Detections:** {item['nb_plates']}")
+
+                with col2:
+                    # Afficher l'image annotée si disponible
+                    if item.get("annotated_image_path"):
+                        annotated_img = load_image_from_path(item["annotated_image_path"])
+                        if annotated_img:
+                            st.image(annotated_img, caption="Annotated", use_container_width=True)
+                    else:
+                        st.info("No annotated image available")
 
         # Download button
         if history:
