@@ -1,23 +1,33 @@
+"""
+Streamlit Frontend pour la détection de plaques d'immatriculation.
+
+Features:
+    - Upload d'une ou plusieurs images
+    - Prédiction via FastAPI
+    - Traitement batch avec PySpark (automatique si > 3 images)
+    - Historique persistant en CSV
+    - Interface moderne
+
+Usage:
+    streamlit run app.py
+"""
+
 import streamlit as st
 import requests
 import pandas as pd
 import base64
 import datetime
+import csv
 from io import BytesIO
+from pathlib import Path
 from PIL import Image
+from typing import List, Dict, Optional
 
-st.markdown("""
-<style>
-#MainMenu {visibility: hidden;}
-header {visibility: hidden;}
-footer {visibility: hidden;}
-</style>
-""", unsafe_allow_html=True)
-
-# =========================================================
+# ============================================================================
 # CONFIG
-# =========================================================
-API_URL = "http://localhost:5000"
+# ============================================================================
+API_URL = "http://localhost:8000"  # FastAPI (port 8000)
+HISTORY_CSV = Path(__file__).parent / "history.csv"
 
 st.set_page_config(
     page_title="License Plate Detection",
@@ -26,12 +36,41 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# =========================================================
-# CSS MODERNE (INCHANGÉ)
-# =========================================================
+# Cache pour éviter les appels répétés
+@st.cache_data(ttl=5)
+def get_api_health():
+    """Vérifie l'état de l'API"""
+    try:
+        r = requests.get(f"{API_URL}/health", timeout=3)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    return {"online": False, "model_loaded": False, "data_loaded": False}
+
+
+@st.cache_data(ttl=30)
+def get_api_stats():
+    """Récupère les statistiques"""
+    try:
+        r = requests.get(f"{API_URL}/api/stats", timeout=3)
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    return None
+
+
+# ============================================================================
+# CSS MODERNE
+# ============================================================================
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+#MainMenu {visibility: hidden;}
+header {visibility: hidden;}
+footer {visibility: hidden;}
 
 html, body, [class*="css"]  {
     font-family: 'Inter', sans-serif;
@@ -219,6 +258,17 @@ div[data-testid="stMetric"] {
     border-radius: 16px;
 }
 
+.spark-badge {
+    display: inline-block;
+    background: rgba(255, 165, 0, 0.15);
+    color: #ffa500;
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    margin-left: 0.5rem;
+}
+
 @keyframes fadeUp {
     from {
         opacity: 0;
@@ -232,121 +282,151 @@ div[data-testid="stMetric"] {
 </style>
 """, unsafe_allow_html=True)
 
-# =========================================================
-# STATE
-# =========================================================
-if "history" not in st.session_state:
-    st.session_state.history = []
 
-# =========================================================
-# HELPERS
-# =========================================================
-def check_api_health():
+# ============================================================================
+# HISTORY FUNCTIONS (CSV)
+# ============================================================================
+def load_history_csv(limit: int = 30) -> List[Dict]:
+    """Charge l'historique depuis le CSV"""
+    if not HISTORY_CSV.exists():
+        return []
+
     try:
-        r = requests.get(f"{API_URL}/api/health", timeout=2)
-        if r.status_code == 200:
-            data = r.json()
-            return {
-                "online": True,
-                "model_loaded": data.get("model_loaded", False),
-                "data_loaded": data.get("data_loaded", False)
-            }
-    except Exception:
-        pass
+        entries = []
+        with open(HISTORY_CSV, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                entries.append({
+                    "datetime": row.get('timestamp', ''),
+                    "filename": row.get('image_name', ''),
+                    "nb_plates": int(row.get('nb_plates', 0)),
+                    "status": row.get('status', 'unknown'),
+                    "detections": row.get('detections', '[]')
+                })
+        return list(reversed(entries[-limit:]))
+    except Exception as e:
+        st.error(f"Error loading history: {e}")
+        return []
+
+
+def get_history_stats() -> Dict:
+    """Calcule les stats depuis l'historique"""
+    history = load_history_csv(limit=1000)
+    total_predictions = len(history)
+    total_plates = sum(h.get('nb_plates', 0) for h in history)
     return {
-        "online": False,
-        "model_loaded": False,
-        "data_loaded": False
+        "total_predictions": total_predictions,
+        "total_plates": total_plates
     }
 
-def get_stats():
-    try:
-        r = requests.get(f"{API_URL}/api/stats", timeout=3)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
-    return None
 
-def decode_base64_image(base64_string):
+# ============================================================================
+# API HELPERS
+# ============================================================================
+def decode_base64_image(base64_string: str) -> Image.Image:
+    """Décode une image base64"""
     image_bytes = base64.b64decode(base64_string)
     return Image.open(BytesIO(image_bytes))
 
-def predict_image(uploaded_file):
+
+def predict_single_image(uploaded_file) -> Optional[Dict]:
+    """Prédiction sur une seule image"""
     try:
         files = {
             "file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)
         }
-        r = requests.post(f"{API_URL}/api/predict", files=files, timeout=120)
-        return r
-    except Exception:
+        r = requests.post(f"{API_URL}/predict", files=files, timeout=120)
+        if r.status_code == 200:
+            return r.json()
+        else:
+            st.error(f"API error: {r.text}")
+            return None
+    except Exception as e:
+        st.error(f"Request failed: {e}")
         return None
 
-def add_to_history(filename, nb_plates, status, detections=None):
-    st.session_state.history.insert(0, {
-        "datetime": datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        "filename": filename,
-        "nb_plates": nb_plates,
-        "status": status,
-        "detections": detections if detections else []
-    })
 
-# =========================================================
+def predict_batch_images(uploaded_files: List) -> Optional[Dict]:
+    """Prédiction batch sur plusieurs images"""
+    try:
+        files = [
+            ("files", (f.name, f.getvalue(), f.type))
+            for f in uploaded_files
+        ]
+        r = requests.post(
+            f"{API_URL}/predict_batch",
+            files=files,
+            params={"use_spark": True},
+            timeout=300
+        )
+        if r.status_code == 200:
+            return r.json()
+        else:
+            st.error(f"Batch API error: {r.text}")
+            return None
+    except Exception as e:
+        st.error(f"Batch request failed: {e}")
+        return None
+
+
+# ============================================================================
 # HEADER
-# =========================================================
-api_state = check_api_health()
-stats = get_stats()
+# ============================================================================
+api_state = get_api_health()
+stats = get_api_stats()
 
 left_header, right_header = st.columns([4, 1.2])
 
 with left_header:
     st.markdown('<div class="main-title">🚗 License Plate Detection</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="subtitle">Interface for prediction from one or multiple images.</div>',
+        '<div class="subtitle">Upload images for license plate detection. '
+        '<span class="spark-badge">⚡ PySpark</span> enabled for batch processing.</div>',
         unsafe_allow_html=True
     )
 
 with right_header:
-    status_class = "status-on" if api_state["online"] else "status-off"
-    status_icon = "🟢" if api_state["online"] else "🔴"
-    status_text = "Online API !" if api_state["online"] else "Offline API !"
+    is_online = api_state.get("online", False)
+    status_class = "status-on" if is_online else "status-off"
+    status_icon = "🟢" if is_online else "🔴"
+    status_text = "API Online" if is_online else "API Offline"
 
     st.markdown(
         f"""
         <div class="card" style="text-align:center;">
             <div class="status-pill {status_class}">{status_icon} {status_text}</div>
             <div style="height:10px;"></div>
-            <div class="small-muted">Model: {"loaded" if api_state["model_loaded"] else "not loaded"}</div>
-            <div class="small-muted">Data: {"loaded" if api_state["data_loaded"] else "not loaded"}</div>
+            <div class="small-muted">Model: {"✅ loaded" if api_state.get("model_loaded") else "❌ not loaded"}</div>
+            <div class="small-muted">Device: {api_state.get("device", "cpu")}</div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-# =========================================================
-# KPI
-# =========================================================
+# ============================================================================
+# KPI CARDS
+# ============================================================================
 k1, k2, k3, k4 = st.columns(4)
 
 total_images = stats.get("total_images", 0) if stats else 0
 total_boxes = stats.get("total_boxes", 0) if stats else 0
 avg_ratio = stats.get("avg_aspect_ratio", 0) if stats else 0
-avg_area = stats.get("avg_bbox_area_norm", 0) if stats else 0
+history_stats = get_history_stats()
 
 with k1:
     st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">Dataset images</div>
-        <div class="kpi-value">{total_images}</div>
-        <div class="kpi-sub">Total available images</div>
+        <div class="kpi-title">📊 Dataset Images</div>
+        <div class="kpi-value">{total_images:,}</div>
+        <div class="kpi-sub">Training dataset size</div>
     </div>
     """, unsafe_allow_html=True)
 
 with k2:
     st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">Bounding boxes</div>
-        <div class="kpi-value">{total_boxes}</div>
+        <div class="kpi-title">📦 Bounding Boxes</div>
+        <div class="kpi-value">{total_boxes:,}</div>
         <div class="kpi-sub">Dataset annotations</div>
     </div>
     """, unsafe_allow_html=True)
@@ -354,156 +434,211 @@ with k2:
 with k3:
     st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">Average aspect ratio</div>
-        <div class="kpi-value">{avg_ratio}</div>
-        <div class="kpi-sub">Average width / height</div>
+        <div class="kpi-title">🔍 Predictions</div>
+        <div class="kpi-value">{history_stats['total_predictions']}</div>
+        <div class="kpi-sub">Total predictions made</div>
     </div>
     """, unsafe_allow_html=True)
 
 with k4:
     st.markdown(f"""
     <div class="kpi-card">
-        <div class="kpi-title">Average bbox area</div>
-        <div class="kpi-value">{avg_area}</div>
-        <div class="kpi-sub">Average normalized bbox area</div>
+        <div class="kpi-title">🚘 Plates Detected</div>
+        <div class="kpi-value">{history_stats['total_plates']}</div>
+        <div class="kpi-sub">All-time detections</div>
     </div>
     """, unsafe_allow_html=True)
 
 st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
 
-# =========================================================
-# MAIN
-# =========================================================
+# ============================================================================
+# MAIN CONTENT
+# ============================================================================
 left_col, right_col = st.columns([2.1, 1])
 
 with left_col:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">📤 Upload & prediction</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">📤 Upload & Prediction</div>', unsafe_allow_html=True)
     st.markdown(
-        '<div class="small-muted">Upload one or more images then run license plate detection.</div>',
+        '<div class="small-muted">Upload one or more images. '
+        'Batch mode with PySpark is automatically enabled for 3+ images.</div>',
         unsafe_allow_html=True
     )
 
     uploaded_files = st.file_uploader(
-        "Choose one or more images",
+        "Choose images",
         type=["jpg", "jpeg", "png"],
         accept_multiple_files=True,
         label_visibility="collapsed"
     )
 
-    run_prediction = st.button("🔍 Run prediction")
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        run_prediction = st.button("🔍 Run Prediction")
+    with col_btn2:
+        use_spark = st.checkbox("Force PySpark", value=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # Process prediction
     if run_prediction:
-        if not api_state["online"]:
-            st.error("Flask API is not reachable. Check that it is running on http://localhost:5000")
-        elif not api_state["model_loaded"]:
-            st.error("YOLO model is not loaded on the Flask side.")
+        if not api_state.get("online"):
+            st.error("❌ FastAPI is not reachable. Start it with: `python api.py`")
+        elif not api_state.get("model_loaded"):
+            st.error("❌ Model is not loaded on the API side.")
         elif not uploaded_files:
-            st.warning("Please upload at least one image.")
+            st.warning("⚠️ Please upload at least one image.")
         else:
-            for file in uploaded_files:
-                with st.spinner(f"Analyzing {file.name}..."):
-                    response = predict_image(file)
+            num_files = len(uploaded_files)
 
-                st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.markdown(f'<div class="section-title">🖼️ Result — {file.name}</div>', unsafe_allow_html=True)
+            # Batch mode (PySpark) si >= 3 images
+            if num_files >= 3 and use_spark:
+                with st.spinner(f"🚀 Processing {num_files} images with PySpark..."):
+                    result = predict_batch_images(uploaded_files)
 
-                if response is None:
-                    st.error("Unable to contact the API.")
-                    add_to_history(file.name, 0, "API error")
-                elif response.status_code != 200:
-                    try:
-                        err = response.json().get("error", "Unknown error")
-                    except Exception:
-                        err = response.text
-                    st.error(err)
-                    add_to_history(file.name, 0, "Error")
-                else:
-                    data = response.json()
+                if result and result.get("success"):
+                    st.success(
+                        f"✅ Batch processed! {result['total_images']} images, "
+                        f"{result['total_plates']} plates detected "
+                        f"({'⚡ Spark' if result.get('used_spark') else '📷 Simple'}) "
+                        f"in {result['processing_time_ms']:.0f}ms"
+                    )
 
-                    col_img1, col_img2 = st.columns(2)
+                    # Afficher les résultats
+                    for i, res in enumerate(result.get("results", [])):
+                        with st.expander(f"🖼️ {res['filename']} - {res['nb_plates']} plates", expanded=(i == 0)):
+                            col1, col2 = st.columns(2)
 
-                    with col_img1:
-                        st.image(Image.open(BytesIO(file.getvalue())), caption="Original image", use_container_width=True)
+                            with col1:
+                                # Image originale
+                                orig_file = next((f for f in uploaded_files if f.name == res['filename']), None)
+                                if orig_file:
+                                    st.image(Image.open(BytesIO(orig_file.getvalue())), caption="Original")
 
-                    with col_img2:
-                        if data.get("annotated_image"):
-                            st.image(decode_base64_image(data["annotated_image"]), caption="Annotated image", use_container_width=True)
+                            with col2:
+                                # Image annotée
+                                if res.get("annotated_image"):
+                                    st.image(decode_base64_image(res["annotated_image"]), caption="Annotated")
 
-                    nb_plates = data.get("nb_plates", 0)
-                    detections = data.get("detections", [])
+                            # Détails
+                            if res.get("detections"):
+                                st.dataframe(
+                                    pd.DataFrame(res["detections"]),
+                                    use_container_width=True
+                                )
+            else:
+                # Mode single image
+                for file in uploaded_files:
+                    with st.spinner(f"🔍 Analyzing {file.name}..."):
+                        result = predict_single_image(file)
 
-                    st.markdown(f"""
-                    <div class="prediction-box">
-                        <div style="font-size:1rem; font-weight:800; color:#f8fafc;">
-                            Detected plates: {nb_plates}
+                    st.markdown('<div class="card">', unsafe_allow_html=True)
+                    st.markdown(f'<div class="section-title">🖼️ Result — {file.name}</div>', unsafe_allow_html=True)
+
+                    if result and result.get("success"):
+                        col_img1, col_img2 = st.columns(2)
+
+                        with col_img1:
+                            st.image(Image.open(BytesIO(file.getvalue())), caption="Original", use_container_width=True)
+
+                        with col_img2:
+                            if result.get("annotated_image"):
+                                st.image(
+                                    decode_base64_image(result["annotated_image"]),
+                                    caption="Annotated",
+                                    use_container_width=True
+                                )
+
+                        nb_plates = result.get("nb_plates", 0)
+                        detections = result.get("detections", [])
+
+                        st.markdown(f"""
+                        <div class="prediction-box">
+                            <div style="font-size:1rem; font-weight:800; color:#f8fafc;">
+                                🚘 Detected plates: {nb_plates}
+                            </div>
+                            <div class="small-muted" style="margin-top:6px;">
+                                Processing time: {result.get('processing_time_ms', 0):.0f}ms
+                            </div>
                         </div>
-                        <div class="small-muted" style="margin-top:6px;">
-                            Detection result for this image.
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                        """, unsafe_allow_html=True)
 
-                    if detections:
-                        st.markdown("**Detection details**")
-
-                        rows = []
-                        for i, det in enumerate(detections, 1):
-                            rows.append({
-                                "Plate": f"Detection {i}",
-                                "Confidence": det["confidence"],
-                                "x_min": det["x_min"],
-                                "y_min": det["y_min"],
-                                "x_max": det["x_max"],
-                                "y_max": det["y_max"],
-                            })
-
-                        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+                        if detections:
+                            st.markdown("**Detection details:**")
+                            st.dataframe(pd.DataFrame(detections), use_container_width=True)
+                        else:
+                            st.info("No license plate detected in this image.")
                     else:
-                        st.info("No license plate detected.")
+                        st.error("Prediction failed for this image.")
 
-                    add_to_history(file.name, nb_plates, "Success", detections)
+                    st.markdown('</div>', unsafe_allow_html=True)
 
-                st.markdown('</div>', unsafe_allow_html=True)
-
+# ============================================================================
+# HISTORY SIDEBAR
+# ============================================================================
 with right_col:
     st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">🕘 Prediction history</div>', unsafe_allow_html=True)
-    st.markdown('<div class="small-muted">Latest analyses performed in this session.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🕘 Prediction History</div>', unsafe_allow_html=True)
+    st.markdown('<div class="small-muted">Latest predictions (from CSV).</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    if st.session_state.history:
+    # Load history from CSV
+    history = load_history_csv(limit=30)
+
+    if history:
+        hist_stats = get_history_stats()
         a, b = st.columns(2)
         with a:
-            st.metric("Predictions", len(st.session_state.history))
+            st.metric("Predictions", hist_stats["total_predictions"])
         with b:
-            st.metric("Detected plates", sum(x["nb_plates"] for x in st.session_state.history))
+            st.metric("Plates Found", hist_stats["total_plates"])
 
-        for item in st.session_state.history:
+        for item in history[:15]:  # Afficher les 15 dernières
+            # Formater le timestamp
+            try:
+                dt = datetime.datetime.fromisoformat(item["datetime"])
+                formatted_dt = dt.strftime("%d/%m/%Y %H:%M")
+            except Exception:
+                formatted_dt = item["datetime"][:16] if item["datetime"] else "Unknown"
+
             st.markdown(f"""
             <div class="history-card">
                 <div class="history-title">{item["filename"]}</div>
-                <div class="history-meta">{item["datetime"]}</div>
+                <div class="history-meta">{formatted_dt}</div>
                 <hr class="custom">
                 <div style="display:flex; justify-content:space-between;">
-                    <div>Detected plates</div>
-                    <div>{item["nb_plates"]}</div>
+                    <div>Plates detected</div>
+                    <div><strong>{item["nb_plates"]}</strong></div>
                 </div>
-                <div>{item["status"]}</div>
+                <div class="small-muted">{item["status"]}</div>
             </div>
             """, unsafe_allow_html=True)
 
-        st.download_button(
-            "⬇️ Download history CSV",
-            data=pd.DataFrame(st.session_state.history).to_csv(index=False),
-            file_name="history.csv"
-        )
+        # Download button
+        if history:
+            df_history = pd.DataFrame(history)
+            csv_data = df_history.to_csv(index=False)
+            st.download_button(
+                "⬇️ Download History CSV",
+                data=csv_data,
+                file_name="prediction_history.csv",
+                mime="text/csv"
+            )
     else:
         st.markdown("""
         <div class="history-card">
-            <div class="history-title">No predictions</div>
+            <div class="history-title">No predictions yet</div>
             <div class="history-meta">History will appear here after first analysis.</div>
         </div>
         """, unsafe_allow_html=True)
+
+# ============================================================================
+# FOOTER
+# ============================================================================
+st.markdown("---")
+st.markdown(
+    '<div style="text-align:center; color:#64748b; font-size:0.85rem;">'
+    '🚀 Powered by <strong>SSD</strong> + <strong>FastAPI</strong> + <strong>PySpark</strong> + <strong>Streamlit</strong>'
+    '</div>',
+    unsafe_allow_html=True
+)
