@@ -33,6 +33,6 @@ timestamp,image_name,nb_plates,detections,status
 2026-03-26T20:10:54.080118,rotatengoaigiao3_jpg.rf.80266e9d37279da25751693135b056f2.jpg,0,[],success
 2026-03-26T20:11:09.950295,xemay1582_jpg.rf.1fd3f4db5f32d029e71005a215f4dbeb.jpg,1,"[{'confidence': 0.9917974472045898, 'x_min': 183, 'y_min': 179, 'x_max': 266, 'y_max': 244}]",success
 2026-03-26T20:14:06.386611,xemayBigPlate59_jpg.rf.85beb431382f08a09668b6b6ecd3be98.jpg,1,"[{'confidence': 0.9903087019920349, 'x_min': 264, 'y_min': 235, 'x_max': 398, 'y_max': 327}]",success
-2026-03-26T20:14:06.388041,xemayBigPlate59_jpg.rf.85beb431382f08a09668b6b6ecd3be98.jpg,/Users/mohamedaitsidihou/Documents/plate-detection-spark/plate-detection-spark/3-web-interface/history_images/20260326_201406_6e28d562.jpg,1,success,"[{'confidence': 0.9903087019920349, 'x_min': 264, 'y_min': 235, 'x_max': 398, 'y_max': 327}]"
 2026-03-26T20:15:01.608694,nob.jpg,0,[],success
-2026-03-26T20:15:01.610622,nob.jpg,/Users/mohamedaitsidihou/Documents/plate-detection-spark/plate-detection-spark/3-web-interface/history_images/20260326_201501_b6062c4b.jpg,0,success,[]
+
+2026-03-26T20:31:21.807746,xemayBigPlate9_jpg.rf.f4c73aae67ab623c3bae59d30c777e7b.jpg,1,"[{'confidence': 0.9859212040901184, 'x_min': 209, 'y_min': 212, 'x_max': 341, 'y_max': 309}]",success
