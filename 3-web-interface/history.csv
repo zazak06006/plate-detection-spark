@@ -1,0 +1,27 @@
+timestamp,image_name,nb_plates,detections,status
+2026-03-26T16:16:40.103831,test.jpg,0,[],test
+2026-03-26T16:17:36.309763,test_0.jpg,0,[],success
+2026-03-26T16:17:36.370179,test_1.jpg,0,[],success
+2026-03-26T16:17:36.436126,test_2.jpg,0,[],success
+2026-03-26T16:17:42.355873,test_0.jpg,0,[],success
+2026-03-26T16:17:42.416665,test_1.jpg,0,[],success
+2026-03-26T16:17:42.487741,test_2.jpg,0,[],success
+2026-03-26T16:25:09.938291,xemayBigPlate99_jpg.rf.97062a8eeff071ce4806b98ad3e71d0f.jpg,2,"[{'confidence': 0.9893849492073059, 'x_min': 201, 'y_min': 221, 'x_max': 335, 'y_max': 320}, {'confidence': 0.8780730962753296, 'x_min': 202, 'y_min': 182, 'x_max': 325, 'y_max': 266}]",success
+2026-03-26T16:26:40.726188,pic_565_jpg.rf.f6d57de5e2723622ef5d4f61b1090230.jpg,2,"[{'confidence': 0.4528696835041046, 'x_min': 201, 'y_min': 176, 'x_max': 317, 'y_max': 221}, {'confidence': 0.37392479181289673, 'x_min': 158, 'y_min': 144, 'x_max': 271, 'y_max': 192}]",success
+2026-03-26T16:28:01.035115,Iconic_image_for_city_streets.jpg,0,[],success
+2026-03-26T16:28:12.737449,Iconic_image_for_city_streets.jpg,0,[],success
+2026-03-26T16:28:16.707462,Iconic_image_for_city_streets.jpg,0,[],success
+2026-03-26T16:28:18.617681,Iconic_image_for_city_streets.jpg,0,[],success
+2026-03-26T16:28:21.563925,Iconic_image_for_city_streets.jpg,0,[],success
+2026-03-26T16:29:12.515854,CarLongPlateGen3467_jpg.rf.ecf5c03325f34e8dde0edb38afb60c56.jpg,4,"[{'confidence': 0.9840827584266663, 'x_min': 161, 'y_min': 145, 'x_max': 255, 'y_max': 186}, {'confidence': 0.9562407732009888, 'x_min': 171, 'y_min': 180, 'x_max': 257, 'y_max': 223}, {'confidence': 0.9127625226974487, 'x_min': 189, 'y_min': 196, 'x_max': 290, 'y_max': 251}, {'confidence': 0.7410322427749634, 'x_min': 215, 'y_min': 173, 'x_max': 311, 'y_max': 226}]",success
+2026-03-26T16:30:56.623281,CarLongPlateGen3467_jpg.rf.ecf5c03325f34e8dde0edb38afb60c56.jpg,4,"[{'confidence': 0.9840827584266663, 'x_min': 161, 'y_min': 145, 'x_max': 255, 'y_max': 186}, {'confidence': 0.9562407732009888, 'x_min': 171, 'y_min': 180, 'x_max': 257, 'y_max': 223}, {'confidence': 0.9127625226974487, 'x_min': 189, 'y_min': 196, 'x_max': 290, 'y_max': 251}, {'confidence': 0.7410322427749634, 'x_min': 215, 'y_min': 173, 'x_max': 311, 'y_max': 226}]",success
+2026-03-26T16:31:01.589015,CarLongPlateGen3467_jpg.rf.ecf5c03325f34e8dde0edb38afb60c56.jpg,4,"[{'confidence': 0.9840827584266663, 'x_min': 161, 'y_min': 145, 'x_max': 255, 'y_max': 186}, {'confidence': 0.9562407732009888, 'x_min': 171, 'y_min': 180, 'x_max': 257, 'y_max': 223}, {'confidence': 0.9127625226974487, 'x_min': 189, 'y_min': 196, 'x_max': 290, 'y_max': 251}, {'confidence': 0.7410322427749634, 'x_min': 215, 'y_min': 173, 'x_max': 311, 'y_max': 226}]",success
+2026-03-26T16:31:07.218789,CarLongPlateGen3467_jpg.rf.ecf5c03325f34e8dde0edb38afb60c56.jpg,4,"[{'confidence': 0.9840827584266663, 'x_min': 161, 'y_min': 145, 'x_max': 255, 'y_max': 186}, {'confidence': 0.9562407732009888, 'x_min': 171, 'y_min': 180, 'x_max': 257, 'y_max': 223}, {'confidence': 0.9127625226974487, 'x_min': 189, 'y_min': 196, 'x_max': 290, 'y_max': 251}, {'confidence': 0.7410322427749634, 'x_min': 215, 'y_min': 173, 'x_max': 311, 'y_max': 226}]",success
+2026-03-26T16:31:12.037745,CarLongPlateGen3467_jpg.rf.ecf5c03325f34e8dde0edb38afb60c56.jpg,4,"[{'confidence': 0.9840827584266663, 'x_min': 161, 'y_min': 145, 'x_max': 255, 'y_max': 186}, {'confidence': 0.9562407732009888, 'x_min': 171, 'y_min': 180, 'x_max': 257, 'y_max': 223}, {'confidence': 0.9127625226974487, 'x_min': 189, 'y_min': 196, 'x_max': 290, 'y_max': 251}, {'confidence': 0.7410322427749634, 'x_min': 215, 'y_min': 173, 'x_max': 311, 'y_max': 226}]",success
+2026-03-26T16:31:43.373888,CarLongPlateGen1711_jpg.rf.a4d1f5b4a806aa43ae4b24f3f979c83e.jpg,3,"[{'confidence': 0.8024162650108337, 'x_min': 189, 'y_min': 186, 'x_max': 284, 'y_max': 220}, {'confidence': 0.41748109459877014, 'x_min': 273, 'y_min': 212, 'x_max': 353, 'y_max': 233}, {'confidence': 0.3764195442199707, 'x_min': 224, 'y_min': 180, 'x_max': 317, 'y_max': 217}]",success
+2026-03-26T16:32:09.282919,xemay424_jpg.rf.6ee2887c5e4e8dd45f69501451592b57.jpg,1,"[{'confidence': 0.9999363422393799, 'x_min': 169, 'y_min': 109, 'x_max': 263, 'y_max': 187}]",success
+2026-03-26T16:32:41.068857,archiPA.png,1,"[{'confidence': 0.4499887228012085, 'x_min': 623, 'y_min': 722, 'x_max': 820, 'y_max': 846}]",success
+2026-03-26T16:32:54.149430,better-caul-sall-banner.jpg,0,[],success
+2026-03-26T16:33:07.435713,unnamed.jpg,0,[],success
+2026-03-26T17:41:42.189325,xemayBigPlate18_jpg.rf.9eb54064f9b30795d14a040febd9a287.jpg,2,"[{'confidence': 0.9981603026390076, 'x_min': 182, 'y_min': 199, 'x_max': 325, 'y_max': 313}, {'confidence': 0.34353572130203247, 'x_min': 252, 'y_min': 198, 'x_max': 393, 'y_max': 298}]",success
+2026-03-26T17:46:11.074059,xemayBigPlate18_jpg.rf.9eb54064f9b30795d14a040febd9a287.jpg,2,"[{'confidence': 0.9981603026390076, 'x_min': 182, 'y_min': 199, 'x_max': 325, 'y_max': 313}, {'confidence': 0.34353572130203247, 'x_min': 252, 'y_min': 198, 'x_max': 393, 'y_max': 298}]",success
