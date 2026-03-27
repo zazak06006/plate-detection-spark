@@ -34,10 +34,9 @@ import uvicorn
 # Import des modules locaux
 from inference import (
     get_model, is_model_loaded, get_device,
-    predict_single_image, predict_from_bytes,
-    annotate_image, save_to_history, load_history
+    annotate_image, save_to_history, load_history,
+    _run_spark_pipeline
 )
-from spark_batch import process_images_batch
 
 
 # ============================================================================
@@ -172,112 +171,17 @@ async def get_stats():
 # ============================================================================
 # PREDICTION ENDPOINTS
 # ============================================================================
-@app.post("/predict", tags=["Prediction"])
-@app.post("/api/predict", tags=["Prediction"])
-async def predict_single(
-    file: UploadFile = File(...),
-    score_threshold: float = Query(0.3, ge=0.0, le=1.0),
-    nms_threshold: float = Query(0.4, ge=0.0, le=1.0),
-    save_upload: bool = Query(False, description="Sauvegarder l'image dans uploads/")
-):
-    """
-    Prédiction sur une seule image.
-
-    - **file**: Image à analyser (JPEG, PNG)
-    - **score_threshold**: Seuil de confiance (défaut: 0.3)
-    - **nms_threshold**: Seuil NMS (défaut: 0.4)
-    - **save_upload**: Sauvegarder l'image uploadée
-
-    Returns:
-        - nb_plates: Nombre de plaques détectées
-        - detections: Liste des détections avec coordonnées
-        - annotated_image: Image annotée en base64
-    """
-    start_time = datetime.now()
-
-    # Valider le fichier
-    if not file.content_type or not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="File must be an image")
-
-    try:
-        # Lire le fichier
-        contents = await file.read()
-        filename = file.filename or "unknown.jpg"
-
-        # Sauvegarder si demandé
-        if save_upload:
-            upload_path = UPLOAD_DIR / filename
-            with open(upload_path, "wb") as f:
-                f.write(contents)
-
-        # Prédiction
-        predictions, original_image = predict_from_bytes(
-            contents,
-            score_threshold=score_threshold,
-            nms_threshold=nms_threshold
-        )
-
-        # Annoter l'image
-        annotated = annotate_image(original_image, predictions['detections'])
-
-        # Sauvegarder les images sur le système de fichiers
-        from inference import save_images_to_filesystem
-        original_img_path, annotated_img_path = save_images_to_filesystem(
-            original_image, annotated, filename
-        )
-
-        # Sauvegarder dans l'historique avec les chemins
-        save_to_history(
-            filename,
-            predictions['nb_plates'],
-            predictions['detections'],
-            original_image_path=original_img_path,
-            annotated_image_path=annotated_img_path
-        )
-
-        # Encoder en base64 pour la réponse (compatibilité)
-        buffer = io.BytesIO()
-        annotated.save(buffer, format='JPEG', quality=90)
-        annotated_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
-
-        # Temps de traitement
-        processing_time = (datetime.now() - start_time).total_seconds() * 1000
-
-        return {
-            "success": True,
-            "filename": filename,
-            "nb_plates": predictions['nb_plates'],
-            "detections": predictions['detections'],
-            "annotated_image": annotated_base64,
-            "annotated_image_path": annotated_img_path,
-            "original_image_path": original_img_path,
-            "processing_time_ms": processing_time
-        }
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
-
-
-@app.post("/predict_batch", response_model=BatchPredictionResponse, tags=["Prediction"])
-async def predict_batch(
+# Compatibilité: L'ancienne route /api/predict et /predict_batch sont unifiées
+@app.post("/api/predict", response_model=BatchPredictionResponse, tags=["Prediction"], include_in_schema=False)
+@app.post("/predict", response_model=BatchPredictionResponse, tags=["Prediction"])
+async def predict_unified(
     files: List[UploadFile] = File(...),
     score_threshold: float = Query(0.3, ge=0.0, le=1.0),
     nms_threshold: float = Query(0.4, ge=0.0, le=1.0),
-    use_spark: bool = Query(True, description="Utiliser PySpark pour le traitement")
+    return_base64: bool = Query(False, description="Retourner l'image encodée en base64 pour l'interface UI")
 ):
     """
-    Prédiction batch sur plusieurs images.
-
-    - **files**: Liste d'images à analyser
-    - **score_threshold**: Seuil de confiance (défaut: 0.3)
-    - **nms_threshold**: Seuil NMS (défaut: 0.4)
-    - **use_spark**: Utiliser PySpark pour paralléliser
-
-    Returns:
-        - total_images: Nombre d'images traitées
-        - total_plates: Total de plaques détectées
-        - results: Liste des résultats par image
-        - used_spark: Si Spark a été utilisé
+    Prédiction unifiée (1 ou N images). Traitement 100% PySpark.
     """
     start_time = datetime.now()
 
@@ -285,26 +189,42 @@ async def predict_batch(
         raise HTTPException(status_code=400, detail="No files provided")
 
     try:
-        # Préparer les données
-        images_data = []
-        for file in files:
-            if file.content_type and file.content_type.startswith("image/"):
-                contents = await file.read()
-                images_data.append((file.filename or "unknown.jpg", contents))
+        # 1. Sauvegarde dans un dossier temporaire pour lecture native PySpark
+        import tempfile
+        import shutil
+        import os
 
-        if not images_data:
+        temp_dir = tempfile.mkdtemp(prefix="spark_images_")
+        
+        valid_images = [f for f in files if f.content_type and f.content_type.startswith("image/")]
+        if not valid_images:
             raise HTTPException(status_code=400, detail="No valid images provided")
 
-        # Traitement batch
-        results = process_images_batch(
-            images_data,
+        for i, file in enumerate(valid_images):
+            # Extraire uniquement le nom du fichier (sans structure de dossiers)
+            filename = Path(file.filename).name if file.filename else f"img_{i}.jpg"
+            filepath = os.path.join(temp_dir, filename)
+            with open(filepath, "wb") as f_out:
+                f_out.write(await file.read())
+
+        # 2. Pipeline PySpark Unifié
+        results = _run_spark_pipeline(
+            temp_dir,
             score_threshold=score_threshold,
             nms_threshold=nms_threshold,
-            use_spark=use_spark,
-            spark_threshold=3  # Utiliser Spark si >= 3 images
+            save_history=True
         )
 
-        # Calculer les totaux
+        
+        # 3. Base64 (optionnel, pour l'UI simple image)
+        if return_base64:
+            for res in results:
+                if res.get("success") and "annotated_image_path" in res:
+                    filepath = res["annotated_image_path"]
+                    if os.path.exists(filepath):
+                        with open(filepath, "rb") as f:
+                            res["annotated_image_base64"] = base64.b64encode(f.read()).decode('utf-8')
+
         total_plates = sum(r.get('nb_plates', 0) for r in results)
         processing_time = (datetime.now() - start_time).total_seconds() * 1000
 
@@ -314,11 +234,18 @@ async def predict_batch(
             total_plates=total_plates,
             results=results,
             processing_time_ms=processing_time,
-            used_spark=use_spark and len(images_data) >= 3
+            used_spark=True
         )
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Batch prediction failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+    finally:
+        # Nettoyage du dossier temporaire
+        if 'temp_dir' in locals() and os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+# Ancienne route "/predict_batch" supprimée car "/predict" est désormais unifiée.
 
 
 # ============================================================================

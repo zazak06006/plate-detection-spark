@@ -16,11 +16,17 @@ from datetime import datetime
 from typing import Dict, List, Tuple, Optional
 from functools import lru_cache
 
+import json
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as T
 from PIL import Image, ImageDraw, ImageFont
 import numpy as np
+
+# Spark Imports
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, udf, lit, element_at, split
+from pyspark.sql.types import StructType, StructField, StringType, BinaryType
 
 # Ajouter le chemin vers le module model
 MODEL_TRAINING_PATH = Path(__file__).parent.parent / "2-model-training"
@@ -114,6 +120,45 @@ _model_manager = ModelManager()
 def get_model() -> torch.nn.Module:
     """Retourne le modèle (chargé une seule fois)"""
     return _model_manager.model
+
+
+# ============================================================================
+# SPARK SESSION MANAGER
+# ============================================================================
+class SparkInferenceManager:
+    """Gestionnaire singleton pour la session Spark"""
+    _instance = None
+    _spark = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    @property
+    def spark(self) -> SparkSession:
+        if self._spark is None:
+            self._spark = SparkSession.builder \
+                .appName("LicensePlateInference") \
+                .master("local[*]") \
+                .config("spark.driver.memory", "4g") \
+                .config("spark.executor.memory", "4g") \
+                .config("spark.sql.execution.arrow.pyspark.enabled", "true") \
+                .config("spark.ui.enabled", "false") \
+                .getOrCreate()
+            self._spark.sparkContext.setLogLevel("ERROR")
+            
+            # Distribuer model.py sur les executors pour l'UDF
+            model_py_path = str(MODEL_TRAINING_PATH / "model.py")
+            self._spark.sparkContext.addPyFile(model_py_path)
+            
+            print("✅ Spark session created for Inference")
+        return self._spark
+
+_spark_manager = SparkInferenceManager()
+
+def get_spark() -> SparkSession:
+    return _spark_manager.spark
 
 
 def get_device() -> torch.device:
@@ -245,95 +290,191 @@ def inverse_letterbox_coords(
 
 
 # ============================================================================
-# INFERENCE SINGLE IMAGE
+# INFERENCE PIPELINE (PYSPARK)
 # ============================================================================
-@torch.no_grad()
-def predict_single_image(
-    image: Image.Image,
-    score_threshold: float = 0.3,
-    nms_threshold: float = 0.4
-) -> Dict:
+def process_image_udf_logic(image_bytes: bytes, score_threshold: float, nms_threshold: float) -> str:
     """
-    Prédit sur une seule image avec letterbox preprocessing.
-
-    Args:
-        image: Image PIL
-        score_threshold: Seuil de confiance
-        nms_threshold: Seuil NMS
-
-    Returns:
-        Dict avec:
-            - nb_plates: int
-            - detections: List[Dict] avec confidence, x_min, y_min, x_max, y_max
-            - boxes_normalized: List[List[float]] coordonnées normalisées [0-1] dans l'image originale
+    UDF logic exécutée sur les workers PySpark.
+    Applique le pipeline complet: Nettoyage -> Redimensionnement -> Inférence.
     """
-    model = get_model()
-    device = get_device()
-
-    # Prétraitement avec letterbox
-    original_size = image.size  # (width, height)
-    tensor, pad_x_norm, pad_y_norm = preprocess_image(image)
-    tensor = tensor.to(device)
-
-    # Inférence
-    results = predict(model, tensor, score_threshold=score_threshold, nms_threshold=nms_threshold)
-    det = results[0]
-
-    # Formater les résultats
-    boxes_letterbox = det['boxes'].cpu().numpy()  # Coordonnées dans l'espace letterbox
-    scores = det['scores'].cpu().numpy()
-
-    detections = []
-    boxes_normalized = []
-
-    if len(boxes_letterbox) > 0:
-        # Inverser le letterbox pour obtenir les coords dans l'image originale
-        boxes_pixels = inverse_letterbox_coords(
-            boxes_letterbox, pad_x_norm, pad_y_norm, original_size
+    import sys
+    import io
+    import json
+    from pathlib import Path
+    
+    # 0. RESOLUTION DES PATHS SUR LES WORKERS SPARK
+    # Les workers Spark n'ont pas forcément le sys.path du driver.
+    # On ajoute manuellement les chemins vers '2-model-training' et '3-web-interface'.
+    current_file = Path(__file__).resolve()
+    web_interface_path = str(current_file.parent)
+    model_training_path = str(current_file.parent.parent / "2-model-training")
+    
+    if web_interface_path not in sys.path:
+        sys.path.insert(0, web_interface_path)
+    if model_training_path not in sys.path:
+        sys.path.insert(0, model_training_path)
+        
+    try:
+        from PIL import Image
+        from inference import (
+            letterbox_image, NORMALIZE_TRANSFORM, get_model, 
+            get_device, inverse_letterbox_coords
         )
+        from model import predict
 
-        for i, (box_px, box_lb, score) in enumerate(zip(boxes_pixels, boxes_letterbox, scores)):
-            x_min, y_min, x_max, y_max = box_px
+        # 1. NETTOYAGE IMAGE
+        # Lecture depuis les bytes bruts et conversion sécurisée en RGB
+        image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+        original_size = image.size
+        
+        # 2. REDIMENSIONNEMENT (LETTERBOX) & NORMALISATION
+        img_letterbox, scale, pad_x_norm, pad_y_norm = letterbox_image(image)
+        tensor = NORMALIZE_TRANSFORM(img_letterbox).unsqueeze(0)
+        
+        # 3. INFÉRENCE
+        model = get_model()  # Singleton par worker
+        device = get_device()
+        tensor = tensor.to(device)
+        
+        results = predict(model, tensor, score_threshold=score_threshold, nms_threshold=nms_threshold)
+        det = results[0]
+        
+        # POST-PROCESSING
+        boxes_letterbox = det['boxes'].cpu().numpy()
+        scores = det['scores'].cpu().numpy()
+        
+        detections = []
+        if len(boxes_letterbox) > 0:
+            boxes_pixels = inverse_letterbox_coords(boxes_letterbox, pad_x_norm, pad_y_norm, original_size)
+            for box_px, score in zip(boxes_pixels, scores):
+                detections.append({
+                    "confidence": float(score),
+                    "x_min": int(box_px[0]), "y_min": int(box_px[1]),
+                    "x_max": int(box_px[2]), "y_max": int(box_px[3])
+                })
+        
+        return json.dumps({
+            "success": True,
+            "nb_plates": len(detections),
+            "detections": detections,
+            "scores": [float(s) for s in scores]
+        })
+    except Exception as e:
+        import traceback
+        return json.dumps({
+            "success": False, 
+            "error": str(e), 
+            "traceback": traceback.format_exc(),
+            "nb_plates": 0, 
+            "detections": [], 
+            "scores": []
+        })
 
-            detections.append({
-                "confidence": float(score),
-                "x_min": int(x_min),
-                "y_min": int(y_min),
-                "x_max": int(x_max),
-                "y_max": int(y_max)
+# Enregistrement de l'UDF PySpark
+spark_process_udf = udf(process_image_udf_logic, StringType())
+
+
+from typing import Union
+
+def _run_spark_pipeline(
+    input_source: Union[List[Tuple[str, bytes]], str], 
+    score_threshold: float, 
+    nms_threshold: float,
+    save_history: bool = False
+) -> List[Dict]:
+    """
+    Exécute le pipeline Spark.
+    Si input_source est une string (chemin d'un dossier), charge via `spark.read.format("binaryFile")`.
+    Sinon, charge depuis une liste python.
+    Maximise l'utilisation de Spark Dataframes et UDFs.
+    """
+    spark = get_spark()
+    
+    if isinstance(input_source, str):
+        # Lecture native PySpark
+        df = spark.read.format("binaryFile").load(input_source)
+        df = df.withColumn("filename", element_at(split(col("path"), "/"), -1))
+        df = df.withColumnRenamed("content", "image_bytes")
+        df = df.select("filename", "image_bytes")
+    else:
+        # Définition du schéma du DataFrame entrant
+        schema = StructType([
+            StructField("filename", StringType(), False),
+            StructField("image_bytes", BinaryType(), False)
+        ])
+        
+        # Création du DataFrame
+        df = spark.createDataFrame(input_source, schema)
+        
+    # Re-partition pour plus de parallelisme
+    df = df.repartition(max(1, spark.sparkContext.defaultParallelism))
+    
+    # Application de l'UDF pour effectuer tous les traitements (Nettoyage, Resize, Inference)
+    df_result = df.withColumn(
+        "json_result", 
+        spark_process_udf(col("image_bytes"), lit(score_threshold), lit(nms_threshold))
+    )
+    
+    results_list = []
+    
+    # Générer un Run ID si on sauvegarde l'historique
+    batch_run_id = None
+    if save_history:
+        batch_run_id = datetime.now().strftime("%Y%m%d_%H%M%S") + f"_{uuid.uuid4().hex[:6]}"
+
+    # Collecte des résultats vers le driver
+    for row in df_result.collect():
+        filename = row["filename"]
+        image_bytes = row["image_bytes"]
+        json_res = json.loads(row["json_result"])
+        
+        if json_res.get("success"):
+            detections = json_res["detections"]
+            nb_plates = len(detections)
+            
+            result_dict = {
+                "status": "success",
+                "success": True,
+                "filename": filename,
+                "nb_plates": nb_plates,
+                "detections": detections,
+                "scores": json_res["scores"],
+                "run_id": batch_run_id
+            }
+            
+            if save_history:
+                image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+                annotated = annotate_image(image, detections)
+                orig_path, ann_path = save_images_to_filesystem(image, annotated, filename, run_id=batch_run_id)
+                
+                # Import des fonctions relatives à history au besoin
+                from inference import save_to_history
+                save_to_history(filename, nb_plates, detections, "success", orig_path, ann_path)
+                result_dict["original_image_path"] = orig_path
+                result_dict["annotated_image_path"] = ann_path
+                
+            results_list.append(result_dict)
+        else:
+            error_msg = json_res.get("error", "Erreur inconnue")
+            print(f"Error on {filename}: {error_msg}\n{json_res.get('traceback', '')}")
+            
+            if save_history:
+                from inference import save_to_history
+                save_to_history(filename, 0, [], f"error: {error_msg}", "", "")
+                
+            results_list.append({
+                "status": f"error: {error_msg}",
+                "success": False, 
+                "filename": filename, 
+                "nb_plates": 0,
+                "detections": [],
+                "error": error_msg
             })
-
-            # Coords normalisées dans l'espace original
-            orig_w, orig_h = original_size
-            boxes_normalized.append([
-                float(x_min) / orig_w,
-                float(y_min) / orig_h,
-                float(x_max) / orig_w,
-                float(y_max) / orig_h
-            ])
-
-    return {
-        "nb_plates": len(detections),
-        "detections": detections,
-        "boxes_normalized": boxes_normalized,
-        "scores": [float(s) for s in scores]
-    }
+            
+    return results_list
 
 
-def predict_from_bytes(
-    image_bytes: bytes,
-    score_threshold: float = 0.3,
-    nms_threshold: float = 0.4
-) -> Tuple[Dict, Image.Image]:
-    """
-    Prédit depuis des bytes d'image.
 
-    Returns:
-        (predictions_dict, original_image)
-    """
-    image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
-    predictions = predict_single_image(image, score_threshold, nms_threshold)
-    return predictions, image
 
 
 # ============================================================================
@@ -389,80 +530,32 @@ def annotate_image(
 
 
 # ============================================================================
-# BATCH INFERENCE (sans Spark - pour petits batches)
+# BATCH INFERENCE (PYSPARK)
 # ============================================================================
-@torch.no_grad()
 def predict_batch_simple(
     images: List[Image.Image],
     score_threshold: float = 0.3,
     nms_threshold: float = 0.4
 ) -> List[Dict]:
     """
-    Prédiction batch simple avec letterbox (sans Spark).
-    Utilisé pour des petits batches (< 10 images).
-
-    Args:
-        images: Liste d'images PIL
-        score_threshold: Seuil de confiance
-        nms_threshold: Seuil NMS
-
-    Returns:
-        Liste de résultats pour chaque image
+    Prédiction batch redirigée vers Spark (remplace l'ancienne boucle).
     """
-    model = get_model()
-    device = get_device()
-
-    results = []
-
-    # Prétraiter toutes les images avec letterbox
-    tensors = []
-    original_sizes = []
-    letterbox_params = []  # (pad_x_norm, pad_y_norm)
-
-    for img in images:
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-        original_sizes.append(img.size)
-
-        # Letterbox + normalisation
-        img_letterbox, scale, pad_x_norm, pad_y_norm = letterbox_image(img)
-        tensors.append(NORMALIZE_TRANSFORM(img_letterbox))
-        letterbox_params.append((pad_x_norm, pad_y_norm))
-
-    # Batch inference
-    batch_tensor = torch.stack(tensors).to(device)
-    batch_results = predict(model, batch_tensor, score_threshold=score_threshold, nms_threshold=nms_threshold)
-
-    # Formater les résultats avec inverse letterbox
-    for i, (det, orig_size, lb_params) in enumerate(zip(batch_results, original_sizes, letterbox_params)):
-        boxes_letterbox = det['boxes'].cpu().numpy()
-        scores = det['scores'].cpu().numpy()
-        pad_x_norm, pad_y_norm = lb_params
-
-        detections = []
-        if len(boxes_letterbox) > 0:
-            # Inverser le letterbox
-            boxes_pixels = inverse_letterbox_coords(
-                boxes_letterbox, pad_x_norm, pad_y_norm, orig_size
-            )
-
-            for box_px, score in zip(boxes_pixels, scores):
-                x_min, y_min, x_max, y_max = box_px
-                detections.append({
-                    "confidence": float(score),
-                    "x_min": int(x_min),
-                    "y_min": int(y_min),
-                    "x_max": int(x_max),
-                    "y_max": int(y_max)
-                })
-
-        results.append({
-            "nb_plates": len(detections),
-            "detections": detections,
-            "scores": [float(s) for s in scores]
+    images_data = []
+    for i, img in enumerate(images):
+        buffer = io.BytesIO()
+        img.convert('RGB').save(buffer, format='JPEG')
+        images_data.append((f"img_{i}.jpg", buffer.getvalue()))
+        
+    spark_results = _run_spark_pipeline(images_data, score_threshold, nms_threshold)
+    
+    formatted = []
+    for res in spark_results:
+        formatted.append({
+            "nb_plates": res.get("nb_plates", 0),
+            "detections": res.get("detections", []),
+            "scores": res.get("scores", [])
         })
-
-    return results
+    return formatted
 
 
 # ============================================================================
@@ -472,64 +565,64 @@ def save_images_to_filesystem(
     original_image: Optional[Image.Image],
     annotated_image: Optional[Image.Image],
     original_filename: str,
-    timestamp: Optional[datetime] = None
+    run_id: Optional[str] = None
 ) -> Tuple[str, str]:
     """
     Sauvegarde les images originale et annotée sur le système de fichiers.
+    Groupées par 'run_id' si fourni.
 
     Args:
         original_image: Image PIL originale (peut être None)
         annotated_image: Image PIL annotée (peut être None)
-        original_filename: Nom du fichier uploadé (pour détection extension)
-        timestamp: Datetime optionnel pour reproductibilité
+        original_filename: Nom du fichier uploadé
+        run_id: ID de la session/batch pour groupement (ex: 20260327_0200_xxxx)
 
     Returns:
         (chemin_relatif_original, chemin_relatif_annoté)
-        Chemins relatifs à 3-web-interface/ ou ("", "") si erreur
     """
     if original_image is None and annotated_image is None:
         return "", ""
 
     try:
-        # Générer le timestamp et UUID
-        now = timestamp or datetime.now()
-        date_str = now.strftime("%Y/%m/%d")
-        time_uuid = now.strftime("%Y%m%d_%H%M%S") + f"_{uuid.uuid4().hex[:8]}"
+        # 1. Déterminer le répertoire de destination
+        if run_id:
+            dest_dir = IMAGES_DIR / "runs" / run_id
+        else:
+            # Fallback structure si pas de run_id (ex: test unitaire)
+            now = datetime.now()
+            date_str = now.strftime("%Y/%m/%d")
+            time_uuid = now.strftime("%Y%m%d_%H%M%S") + f"_{uuid.uuid4().hex[:8]}"
+            dest_dir = IMAGES_DIR / date_str / time_uuid
 
-        # Créer le répertoire de destination
-        dest_dir = IMAGES_DIR / date_str / time_uuid
         dest_dir.mkdir(parents=True, exist_ok=True)
 
-        # Déterminer l'extension du fichier original
-        import imghdr
+        # 2. Préparer les noms de fichiers
+        # On utilise le nom de fichier original comme base pour éviter les collisions dans le run_id folder
+        base_name = Path(original_filename).stem
         orig_ext = Path(original_filename).suffix.lower()
-        if orig_ext not in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
-            if original_image and original_image.format:
-                orig_ext = f".{original_image.format.lower()}"
-            else:
-                orig_ext = ".jpg"
+        if not orig_ext:
+            orig_ext = ".jpg"
 
-        # Sauvegarder l'image originale
+        # 3. Sauvegarder l'image originale
         original_path_rel = ""
         if original_image is not None:
-            original_path_abs = dest_dir / f"original{orig_ext}"
+            fname_orig = f"{base_name}_orig{orig_ext}"
+            original_path_abs = dest_dir / fname_orig
             original_image.save(original_path_abs)
-            original_path_rel = str(dest_dir.relative_to(IMAGES_DIR.parent) / f"original{orig_ext}").replace("\\", "/")
+            original_path_rel = str(original_path_abs.relative_to(IMAGES_DIR.parent)).replace("\\", "/")
 
-        # Sauvegarder l'image annotée
+        # 4. Sauvegarder l'image annotée
         annotated_path_rel = ""
         if annotated_image is not None:
-            annotated_path_abs = dest_dir / "annotated.jpg"
+            fname_ann = f"{base_name}_ann.jpg"
+            annotated_path_abs = dest_dir / fname_ann
             annotated_image.save(annotated_path_abs, format='JPEG', quality=90)
-            annotated_path_rel = str(dest_dir.relative_to(IMAGES_DIR.parent) / "annotated.jpg").replace("\\", "/")
+            annotated_path_rel = str(annotated_path_abs.relative_to(IMAGES_DIR.parent)).replace("\\", "/")
 
         return original_path_rel, annotated_path_rel
 
-    except OSError as e:
-        print(f"⚠️ Erreur lors de la sauvegarde des images: {e}")
-        return "", ""
     except Exception as e:
-        print(f"❌ Erreur inattendue lors de la sauvegarde des images: {e}")
+        print(f"❌ Erreur sauvegarde images: {e}")
         return "", ""
 
 
@@ -621,7 +714,8 @@ def migrate_old_history_csv() -> bool:
                     except:
                         timestamp = None
 
-                    _, annotated_path = save_images_to_filesystem(None, image, "migrated.jpg", timestamp)
+                    ts_str = timestamp.strftime("%Y%m%d_%H%M%S") if timestamp else "migrated"
+                    _, annotated_path = save_images_to_filesystem(None, image, "migrated.jpg", run_id=f"migrated_{ts_str}")
                 except Exception as e:
                     print(f"⚠️ Impossible d'extraire image base64: {e}")
 
@@ -772,7 +866,11 @@ if __name__ == "__main__":
 
     # Test avec une image factice
     test_image = Image.new('RGB', (640, 480), color='white')
-    result = predict_single_image(test_image)
+    buffer = io.BytesIO()
+    test_image.save(buffer, format='JPEG')
+    image_bytes = buffer.getvalue()
+    
+    result = _run_spark_pipeline([("test.jpg", image_bytes)], 0.3, 0.4)
     print(f"✅ Prediction result: {result}")
 
     # Test historique

@@ -1,15 +1,10 @@
 """
-Streamlit Frontend pour la détection de plaques d'immatriculation.
-
+Streamlit Frontend Premium - License Plate Detection
 Features:
-    - Upload d'une ou plusieurs images
-    - Prédiction via FastAPI
-    - Traitement batch avec PySpark (automatique si > 3 images)
-    - Historique persistant en CSV
-    - Interface moderne
-
-Usage:
-    streamlit run app.py
+    - Button-based sidebar navigation
+    - Glassmorphism & Neon Design System
+    - Unified PySpark Inference Pipeline
+    - Run-based history grouping
 """
 
 import streamlit as st
@@ -18,284 +13,52 @@ import pandas as pd
 import base64
 import datetime
 import csv
+import random
+import uuid
+import ast
 from io import BytesIO
 from pathlib import Path
 from PIL import Image
 from typing import List, Dict, Optional
 
 # ============================================================================
-# CONFIG
+# CONFIG & PAGE SETUP
 # ============================================================================
-API_URL = "http://localhost:8000"  # FastAPI (port 8000)
+API_URL = "http://localhost:8000"
 HISTORY_CSV = Path(__file__).parent / "history.csv"
+TEST_IMAGES_DIR = Path("/Users/zazak/Documents/Studies/M1 - ESGI/Trimestre 2/Projet Spark Core/license-plate-detection-dataset-10125-images/test/images")
 
 st.set_page_config(
-    page_title="License Plate Detection",
-    page_icon="🚗",
+    page_title="Vision Plates | AI Analytics",
+    page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
-# Cache pour éviter les appels répétés
+# ============================================================================
+# MODERN DATA HELPERS
+# ============================================================================
 @st.cache_data(ttl=5)
 def get_api_health():
-    """Vérifie l'état de l'API"""
     try:
         r = requests.get(f"{API_URL}/health", timeout=3)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
-    return {"online": False, "model_loaded": False, "data_loaded": False}
-
+        if r.status_code == 200: return r.json()
+    except: pass
+    return {"online": False, "model_loaded": False}
 
 @st.cache_data(ttl=30)
 def get_api_stats():
-    """Récupère les statistiques"""
     try:
         r = requests.get(f"{API_URL}/api/stats", timeout=3)
-        if r.status_code == 200:
-            return r.json()
-    except Exception:
-        pass
+        if r.status_code == 200: return r.json()
+    except: pass
     return None
 
-
-# ============================================================================
-# CSS MODERNE
-# ============================================================================
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
-#MainMenu {visibility: hidden;}
-header {visibility: hidden;}
-footer {visibility: hidden;}
-
-html, body, [class*="css"]  {
-    font-family: 'Inter', sans-serif;
-}
-
-.stApp {
-    background:
-        radial-gradient(circle at top left, rgba(99,102,241,0.18), transparent 28%),
-        radial-gradient(circle at top right, rgba(6,182,212,0.16), transparent 25%),
-        linear-gradient(135deg, #0b1120 0%, #111827 45%, #0f172a 100%);
-    color: #e5e7eb;
-}
-
-.block-container {
-    padding-top: 1.5rem;
-    padding-bottom: 2rem;
-    max-width: 1400px;
-}
-
-.main-title {
-    font-size: 2.2rem;
-    font-weight: 800;
-    background: linear-gradient(90deg, #a78bfa, #22d3ee, #34d399);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin-bottom: 0.2rem;
-}
-
-.subtitle {
-    color: #94a3b8;
-    font-size: 1rem;
-    margin-bottom: 1.2rem;
-}
-
-.card {
-    background: rgba(15, 23, 42, 0.72);
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border-radius: 22px;
-    padding: 1.2rem 1.2rem;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.20);
-    animation: fadeUp 0.55s ease;
-    margin-bottom: 1rem;
-}
-
-.kpi-card {
-    background: linear-gradient(135deg, rgba(99,102,241,0.20), rgba(6,182,212,0.10));
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 20px;
-    padding: 1rem 1.1rem;
-    min-height: 115px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
-    animation: fadeUp 0.6s ease;
-}
-
-.kpi-title {
-    color: #94a3b8;
-    font-size: 0.92rem;
-    font-weight: 600;
-    margin-bottom: 0.35rem;
-}
-
-.kpi-value {
-    font-size: 1.7rem;
-    font-weight: 800;
-    color: #f8fafc;
-}
-
-.kpi-sub {
-    color: #cbd5e1;
-    font-size: 0.85rem;
-    margin-top: 0.3rem;
-}
-
-.status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0.65rem 1rem;
-    border-radius: 999px;
-    font-weight: 700;
-    font-size: 0.95rem;
-    border: 1px solid rgba(255,255,255,0.10);
-}
-
-.status-on {
-    background: rgba(16, 185, 129, 0.12);
-    color: #34d399;
-}
-
-.status-off {
-    background: rgba(239, 68, 68, 0.12);
-    color: #f87171;
-}
-
-.section-title {
-    font-size: 1.08rem;
-    font-weight: 700;
-    color: #f8fafc;
-    margin-bottom: 0.8rem;
-}
-
-.small-muted {
-    color: #94a3b8;
-    font-size: 0.92rem;
-}
-
-.prediction-box {
-    background: linear-gradient(135deg, rgba(99,102,241,0.16), rgba(34,211,238,0.08));
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 18px;
-    padding: 0.9rem 1rem;
-    margin-top: 0.6rem;
-}
-
-.prediction-chip {
-    display: inline-block;
-    background: rgba(34, 211, 238, 0.12);
-    color: #67e8f9;
-    padding: 0.35rem 0.7rem;
-    border-radius: 999px;
-    font-size: 0.82rem;
-    font-weight: 700;
-    margin-right: 0.45rem;
-    margin-bottom: 0.45rem;
-    border: 1px solid rgba(103,232,249,0.18);
-}
-
-.history-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 16px;
-    padding: 0.9rem;
-    margin-bottom: 0.75rem;
-    animation: fadeUp 0.55s ease;
-}
-
-.history-title {
-    font-weight: 700;
-    color: #f8fafc;
-    margin-bottom: 0.2rem;
-}
-
-.history-meta {
-    color: #94a3b8;
-    font-size: 0.84rem;
-}
-
-hr.custom {
-    border: none;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(148,163,184,0.25), transparent);
-    margin: 1rem 0 0.7rem 0;
-}
-
-.stButton > button {
-    width: 100%;
-    border: none;
-    border-radius: 14px;
-    padding: 0.85rem 1rem;
-    font-weight: 800;
-    color: white;
-    background: linear-gradient(90deg, #6366f1, #06b6d4);
-    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.28);
-    transition: all 0.25s ease;
-}
-
-.stButton > button:hover {
-    transform: translateY(-1px);
-    filter: brightness(1.06);
-}
-
-[data-testid="stFileUploader"] {
-    background: rgba(255,255,255,0.03);
-    border: 1px dashed rgba(148,163,184,0.26);
-    border-radius: 16px;
-    padding: 0.6rem;
-}
-
-div[data-testid="stMetric"] {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    padding: 12px;
-    border-radius: 16px;
-}
-
-.spark-badge {
-    display: inline-block;
-    background: rgba(255, 165, 0, 0.15);
-    color: #ffa500;
-    padding: 0.25rem 0.6rem;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 700;
-    margin-left: 0.5rem;
-}
-
-@keyframes fadeUp {
-    from {
-        opacity: 0;
-        transform: translateY(12px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-# ============================================================================
-# HISTORY FUNCTIONS (CSV)
-# ============================================================================
-def load_history_csv(limit: int = 30) -> List[Dict]:
-    """Charge l'historique depuis le CSV"""
-    if not HISTORY_CSV.exists():
-        return []
-
+def load_history_csv(limit: int = 50) -> List[Dict]:
+    if not HISTORY_CSV.exists(): return []
     try:
-        # Importer la migration depuis inference
         from inference import migrate_old_history_csv
-        migrate_old_history_csv()  # Effectuer migration si nécessaire
-
+        migrate_old_history_csv()
         entries = []
         with open(HISTORY_CSV, 'r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
@@ -309,378 +72,306 @@ def load_history_csv(limit: int = 30) -> List[Dict]:
                     "original_image_path": row.get('original_image_path', ''),
                     "annotated_image_path": row.get('annotated_image_path', '')
                 })
-        return list(reversed(entries[-limit:]))
-    except Exception as e:
-        st.error(f"Error loading history: {e}")
-        return []
+        return list(reversed(entries))[:limit]
+    except: return []
 
-
-def get_history_stats() -> Dict:
-    """Calcule les stats depuis l'historique"""
+def get_history_stats():
     history = load_history_csv(limit=1000)
-    total_predictions = len(history)
-    total_plates = sum(h.get('nb_plates', 0) for h in history)
     return {
-        "total_predictions": total_predictions,
-        "total_plates": total_plates
+        "total_predictions": len(history),
+        "total_plates": sum(h.get('nb_plates', 0) for h in history)
     }
 
-
-# ============================================================================
-# API HELPERS
-# ============================================================================
 def load_image_from_path(relative_path: str) -> Optional[Image.Image]:
-    """Charge une image depuis un chemin relatif"""
-    if not relative_path:
-        return None
+    if not relative_path: return None
     try:
-        # Chemin absolu
         abs_path = HISTORY_CSV.parent / relative_path
-        if abs_path.exists():
-            return Image.open(abs_path).convert('RGB')
-        else:
-            st.warning(f"Image not found: {relative_path}")
-            return None
-    except Exception as e:
-        st.warning(f"Error loading image: {e}")
-        return None
-
-
-def decode_base64_image(base64_string: str) -> Image.Image:
-    """Décode une image base64 (pour compatibilité)"""
-    image_bytes = base64.b64decode(base64_string)
-    return Image.open(BytesIO(image_bytes))
-
-
-def predict_single_image(uploaded_file) -> Optional[Dict]:
-    """Prédiction sur une seule image"""
-    try:
-        files = {
-            "file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)
-        }
-        r = requests.post(f"{API_URL}/predict", files=files, timeout=120)
-        if r.status_code == 200:
-            return r.json()
-        else:
-            st.error(f"API error: {r.text}")
-            return None
-    except Exception as e:
-        st.error(f"Request failed: {e}")
-        return None
-
+        if abs_path.exists(): return Image.open(abs_path).convert('RGB')
+    except: pass
+    return None
 
 def predict_batch_images(uploaded_files: List) -> Optional[Dict]:
-    """Prédiction batch sur plusieurs images"""
     try:
-        files = [
-            ("files", (f.name, f.getvalue(), f.type))
-            for f in uploaded_files
-        ]
-        r = requests.post(
-            f"{API_URL}/predict_batch",
-            files=files,
-            params={"use_spark": True},
-            timeout=300
-        )
-        if r.status_code == 200:
-            return r.json()
-        else:
-            st.error(f"Batch API error: {r.text}")
-            return None
-    except Exception as e:
-        st.error(f"Batch request failed: {e}")
-        return None
+        files = [("files", (f.name, f.getvalue(), f.type)) for f in uploaded_files]
+        r = requests.post(f"{API_URL}/predict", files=files, timeout=300)
+        if r.status_code == 200: return r.json()
+        st.error(f"API Error: {r.text}")
+    except Exception as e: st.error(f"Request failed: {e}")
+    return None
 
+def get_dataset_samples(n=24):
+    if not TEST_IMAGES_DIR.exists(): return []
+    all_images = list(TEST_IMAGES_DIR.glob("*.jpg")) + list(TEST_IMAGES_DIR.glob("*.png"))
+    return random.sample(all_images, min(n, len(all_images)))
 
 # ============================================================================
-# HEADER
+# PREMIUM GLASSMORPHISM CSS
 # ============================================================================
-api_state = get_api_health()
-stats = get_api_stats()
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;600;800&family=Inter:wght@400;500;700&display=swap');
 
-left_header, right_header = st.columns([4, 1.2])
+/* Main Theme Styling */
+html, body, [class*="css"] { 
+    font-family: 'Inter', sans-serif;
+}
+h1, h2, h3, .main-title {
+    font-family: 'Outfit', sans-serif;
+}
 
-with left_header:
-    st.markdown('<div class="main-title">🚗 License Plate Detection</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="subtitle">Upload images for license plate detection. '
-        '<span class="spark-badge">⚡ PySpark</span> enabled for batch processing.</div>',
-        unsafe_allow_html=True
-    )
+.stApp {
+    background: radial-gradient(circle at top left, rgba(99,102,241,0.1) 0%, transparent 40%),
+                radial-gradient(circle at bottom right, rgba(34,211,238,0.1) 0%, transparent 40%),
+                linear-gradient(135deg, #0f172a 0%, #020617 100%);
+    color: #f1f5f9;
+}
 
-with right_header:
-    is_online = api_state.get("online", False)
-    status_class = "status-on" if is_online else "status-off"
-    status_icon = "🟢" if is_online else "🔴"
-    status_text = "API Online" if is_online else "API Offline"
+/* Glassmorphism Cards */
+.glass-card {
+    background: rgba(30, 41, 59, 0.4);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
 
-    st.markdown(
-        f"""
-        <div class="card" style="text-align:center;">
-            <div class="status-pill {status_class}">{status_icon} {status_text}</div>
-            <div style="height:10px;"></div>
-            <div class="small-muted">Model: {"✅ loaded" if api_state.get("model_loaded") else "❌ not loaded"}</div>
-            <div class="small-muted">Device: {api_state.get("device", "cpu")}</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+.main-title {
+    font-size: 3.5rem; 
+    font-weight: 800; 
+    letter-spacing: -0.05em;
+    margin-bottom: 0.2rem;
+    background: linear-gradient(135deg, #818cf8 0%, #22d3ee 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+/* Spark & Status Badges */
+.spark-badge {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Custom Selection Grid */
+.selection-img-container img {
+    height: 180px !important;
+    object-fit: cover !important;
+    border-radius: 16px !important;
+    transition: transform 0.3s ease;
+    border: 2px solid rgba(255,255,255,0.05);
+}
+.selection-img-container img:hover {
+    transform: scale(1.03);
+    border-color: #818cf8;
+}
+
+/* Sidebar Customization */
+.stSidebar {
+    background-color: rgba(2, 6, 23, 0.8) !important;
+    backdrop-filter: blur(10px);
+}
+[data-testid="stSidebarNav"] {display: none;} /* Hide default radio if any left */
+
+/* Expander Styling */
+.streamlit-expanderHeader {
+    background-color: rgba(255,255,255,0.03) !important;
+    border-radius: 12px !important;
+    border: none !important;
+}
+
+/* Metric Polish */
+[data-testid="stMetricValue"] {
+    font-weight: 700 !important;
+    font-family: 'Outfit', sans-serif;
+    color: #22d3ee !important;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ============================================================================
-# KPI CARDS
+# NAVIGATION ENGINE (BUTTON BASED)
 # ============================================================================
-k1, k2, k3, k4 = st.columns(4)
+if "page" not in st.session_state:
+    st.session_state.page = "📥 Upload Analysis"
 
-total_images = stats.get("total_images", 0) if stats else 0
-total_boxes = stats.get("total_boxes", 0) if stats else 0
-avg_ratio = stats.get("avg_aspect_ratio", 0) if stats else 0
-history_stats = get_history_stats()
+def set_page(p):
+    st.session_state.page = p
 
-with k1:
-    st.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-title">📊 Dataset Images</div>
-        <div class="kpi-value">{total_images:,}</div>
-        <div class="kpi-sub">Training dataset size</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with k2:
-    st.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-title">📦 Bounding Boxes</div>
-        <div class="kpi-value">{total_boxes:,}</div>
-        <div class="kpi-sub">Dataset annotations</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with k3:
-    st.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-title">🔍 Predictions</div>
-        <div class="kpi-value">{history_stats['total_predictions']}</div>
-        <div class="kpi-sub">Total predictions made</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with k4:
-    st.markdown(f"""
-    <div class="kpi-card">
-        <div class="kpi-title">🚘 Plates Detected</div>
-        <div class="kpi-value">{history_stats['total_plates']}</div>
-        <div class="kpi-sub">All-time detections</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown('<div style="height: 10px;"></div>', unsafe_allow_html=True)
+# Sidebar Content
+with st.sidebar:
+    st.markdown("<h2 style='color:#818cf8;'>⚡ Plate Analytics</h2>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    # Navigation Buttons
+    nav_options = ["📥 Upload Analysis", "📂 Sample Dataset", "🕘 Prediction History"]
+    for opt in nav_options:
+        is_active = st.session_state.page == opt
+        if st.button(
+            opt, 
+            use_container_width=True, 
+            type="primary" if is_active else "secondary",
+            key=f"nav_{opt}"
+        ):
+            st.session_state.page = opt
+            st.rerun()
+            
+    st.markdown("---")
+    
+    # Mini stats in sidebar
+    stats = get_api_stats()
+    api_state = get_api_health()
+    
+    st.markdown("### 📊 Dataset Overview")
+    c1, c2 = st.columns(2)
+    c1.metric("Images", stats.get("total_images", 0) if stats else 0)
+    c2.metric("Labels", stats.get("total_boxes", 0) if stats else 0)
+    
+    st.markdown("---")
+    status_text = "🟢 System Online" if api_state.get("online") else "🔴 Offline"
+    st.info(f"**Backend:** {status_text}\n\n**Model:** {'✅ Operational' if api_state.get('model_loaded') else '❌ Not Loaded'}")
 
 # ============================================================================
-# MAIN CONTENT
+# MAIN INTERFACE
 # ============================================================================
-left_col, right_col = st.columns([2.1, 1])
+page = st.session_state.page
 
-with left_col:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">📤 Upload & Prediction</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="small-muted">Upload one or more images. '
-        'Batch mode with PySpark is automatically enabled for 3+ images.</div>',
-        unsafe_allow_html=True
-    )
+# Shared Header
+st.markdown('<div class="main-title">Vision Plates</div>', unsafe_allow_html=True)
+st.markdown(f"Advanced Distributed Inference powered by <span class='spark-badge'>PySpark Cluster</span>", unsafe_allow_html=True)
+st.markdown("<br>", unsafe_allow_html=True)
 
-    uploaded_files = st.file_uploader(
-        "Choose images",
-        type=["jpg", "jpeg", "png"],
-        accept_multiple_files=True,
-        label_visibility="collapsed"
-    )
-
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        run_prediction = st.button("🔍 Run Prediction")
-    with col_btn2:
-        use_spark = st.checkbox("Force PySpark", value=True)
-
+if page == "📥 Upload Analysis":
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.subheader("📥 Intelligent Batch Upload")
+    st.write("Drag and drop multiple images for high-speed concurrent analysis.")
+    
+    uploaded_files = st.file_uploader("", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+    
+    if st.button("🚀 Lancer l'analyse intensive", use_container_width=True) and uploaded_files:
+        with st.spinner("Processing on Spark Cluster..."):
+            result = predict_batch_images(uploaded_files)
+            if result and result.get("success"):
+                st.balloons()
+                st.success(f"Execution successful: {result['total_plates']} detections across {len(result['results'])} images.")
+                
+                for i, res in enumerate(result['results']):
+                    with st.expander(f"🔮 Result: {res['filename']} ({res['nb_plates']} plates)", expanded=(i==0)):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if res.get("original_image_path"):
+                                img = load_image_from_path(res["original_image_path"])
+                                if img: st.image(img, caption="Original Stream")
+                            else:
+                                raw_img = next(f for f in uploaded_files if f.name == res['filename'])
+                                st.image(Image.open(BytesIO(raw_img.getvalue())), caption="Original Input")
+                        with col2:
+                            if res.get("annotated_image_path"):
+                                ann = load_image_from_path(res["annotated_image_path"])
+                                if ann: st.image(ann, caption="AI Detection Layer")
+                        
+                        # Data view below
+                        st.markdown(f"**Intelligence Summary:** Found {res['nb_plates']} license plates.")
+                        if res.get("detections"):
+                            st.dataframe(pd.DataFrame(res["detections"]), hide_index=True, use_container_width=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Process prediction
-    if run_prediction:
-        if not api_state.get("online"):
-            st.error("❌ FastAPI is not reachable. Start it with: `python api.py`")
-        elif not api_state.get("model_loaded"):
-            st.error("❌ Model is not loaded on the API side.")
-        elif not uploaded_files:
-            st.warning("⚠️ Please upload at least one image.")
-        else:
-            num_files = len(uploaded_files)
-
-            # Batch mode (PySpark) si >= 3 images
-            if num_files >= 3 and use_spark:
-                with st.spinner(f"🚀 Processing {num_files} images with PySpark..."):
-                    result = predict_batch_images(uploaded_files)
-
-                if result and result.get("success"):
-                    st.success(
-                        f"✅ Batch processed! {result['total_images']} images, "
-                        f"{result['total_plates']} plates detected "
-                        f"({'⚡ Spark' if result.get('used_spark') else '📷 Simple'}) "
-                        f"in {result['processing_time_ms']:.0f}ms"
-                    )
-
-                    # Afficher les résultats
-                    for i, res in enumerate(result.get("results", [])):
-                        with st.expander(f"🖼️ {res['filename']} - {res['nb_plates']} plates", expanded=(i == 0)):
-                            col1, col2 = st.columns(2)
-
-                            with col1:
-                                # Image originale
-                                orig_file = next((f for f in uploaded_files if f.name == res['filename']), None)
-                                if orig_file:
-                                    st.image(Image.open(BytesIO(orig_file.getvalue())), caption="Original")
-
-                            with col2:
-                                # Image annotée
-                                if res.get("annotated_image_path"):
-                                    annotated_img = load_image_from_path(res["annotated_image_path"])
-                                    if annotated_img:
-                                        st.image(annotated_img, caption="Annotated")
-                                elif res.get("annotated_image"):
-                                    # Compatibilité: essayer le base64 aussi
-                                    st.image(decode_base64_image(res["annotated_image"]), caption="Annotated")
-
-                            # Détails
-                            if res.get("detections"):
-                                st.dataframe(
-                                    pd.DataFrame(res["detections"]),
-                                    use_container_width=True
-                                )
-            else:
-                # Mode single image
-                for file in uploaded_files:
-                    with st.spinner(f"🔍 Analyzing {file.name}..."):
-                        result = predict_single_image(file)
-
-                    st.markdown('<div class="card">', unsafe_allow_html=True)
-                    st.markdown(f'<div class="section-title">🖼️ Result — {file.name}</div>', unsafe_allow_html=True)
-
-                    if result and result.get("success"):
-                        col_img1, col_img2 = st.columns(2)
-
-                        with col_img1:
-                            st.image(Image.open(BytesIO(file.getvalue())), caption="Original", use_container_width=True)
-
-                        with col_img2:
-                            if result.get("annotated_image_path"):
-                                annotated_img = load_image_from_path(result["annotated_image_path"])
-                                if annotated_img:
-                                    st.image(
-                                        annotated_img,
-                                        caption="Annotated",
-                                        use_container_width=True
-                                    )
-                            elif result.get("annotated_image"):
-                                # Compatibilité: essayer le base64 aussi
-                                st.image(
-                                    decode_base64_image(result["annotated_image"]),
-                                    caption="Annotated",
-                                    use_container_width=True
-                                )
-
-                        nb_plates = result.get("nb_plates", 0)
-                        detections = result.get("detections", [])
-
-                        st.markdown(f"""
-                        <div class="prediction-box">
-                            <div style="font-size:1rem; font-weight:800; color:#f8fafc;">
-                                🚘 Detected plates: {nb_plates}
-                            </div>
-                            <div class="small-muted" style="margin-top:6px;">
-                                Processing time: {result.get('processing_time_ms', 0):.0f}ms
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
-
-                        if detections:
-                            st.markdown("**Detection details:**")
-                            st.dataframe(pd.DataFrame(detections), use_container_width=True)
-                        else:
-                            st.info("No license plate detected in this image.")
-                    else:
-                        st.error("Prediction failed for this image.")
-
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-# ============================================================================
-# HISTORY SIDEBAR
-# ============================================================================
-with right_col:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown('<div class="section-title">🕘 Prediction History</div>', unsafe_allow_html=True)
-    st.markdown('<div class="small-muted">Latest predictions (from CSV).</div>', unsafe_allow_html=True)
+elif page == "📂 Sample Dataset":
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.subheader("📂 Interactive Model Validation")
+    st.write("Stress test the model using historical data from the curated test set.")
+    
+    if st.button("🔄 Refresh Data Samples") or "sample_paths" not in st.session_state:
+        st.session_state["sample_paths"] = get_dataset_samples(24)
+        st.rerun()
+    
+    selected_payload = []
+    st.markdown('<div class="selection-img-container">', unsafe_allow_html=True)
+    cols = st.columns(4)
+    for i, path in enumerate(st.session_state["sample_paths"]):
+        with cols[i % 4]:
+            st.image(Image.open(path), use_column_width=True)
+            if st.checkbox("Select", key=f"v_sel_{path.name}"):
+                selected_payload.append(path)
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    if st.button("🔍 Run Selection Analysis", disabled=not selected_payload, use_container_width=True):
+        with st.spinner("Analyzing selected segments..."):
+            class MockUpload:
+                def __init__(self, p):
+                    self.name = p.name
+                    with open(p, "rb") as f: self.data = f.read()
+                    self.type = "image/jpeg"
+                def getvalue(self): return self.data
+            
+            results = predict_batch_images([MockUpload(p) for p in selected_payload])
+            if results and results.get("success"):
+                for res in results['results']:
+                    with st.expander(f"📉 Inference: {res['filename']}", expanded=True):
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            l_img = load_image_from_path(res.get("original_image_path"))
+                            if not l_img: l_img = Image.open(next(p for p in selected_payload if p.name==res['filename']))
+                            st.image(l_img, caption="Calibration Ref")
+                        with c2:
+                            l_ann = load_image_from_path(res.get("annotated_image_path"))
+                            if l_ann: st.image(l_ann, caption="Neural Mapping")
+                        
+                        st.markdown(f"**Metrics:** Detected {res['nb_plates']} plates.")
+                        if res.get("detections"):
+                            st.dataframe(pd.DataFrame(res["detections"]), hide_index=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Load history from CSV
-    history = load_history_csv(limit=30)
-
-    if history:
-        hist_stats = get_history_stats()
-        a, b = st.columns(2)
-        with a:
-            st.metric("Predictions", hist_stats["total_predictions"])
-        with b:
-            st.metric("Plates Found", hist_stats["total_plates"])
-
-        for item in history[:15]:  # Afficher les 15 dernières
-            # Formater le timestamp
-            try:
-                dt = datetime.datetime.fromisoformat(item["datetime"])
-                formatted_dt = dt.strftime("%d/%m/%Y %H:%M")
-            except Exception:
-                formatted_dt = item["datetime"][:16] if item["datetime"] else "Unknown"
-
-            with st.expander(f"🖼️ {item['filename']} — {item['nb_plates']} plates", expanded=False):
-                col1, col2 = st.columns([1, 1])
-
-                with col1:
-                    st.markdown(f"**{formatted_dt}**")
-                    st.markdown(f"Status: `{item['status']}`")
-                    if item.get("detections") and item["detections"] != "[]":
-                        st.markdown(f"**Detections:** {item['nb_plates']}")
-
-                with col2:
-                    # Afficher l'image annotée si disponible
-                    if item.get("annotated_image_path"):
-                        annotated_img = load_image_from_path(item["annotated_image_path"])
-                        if annotated_img:
-                            st.image(annotated_img, caption="Annotated", use_container_width=True)
-                    else:
-                        st.info("No annotated image available")
-
-        # Download button
-        if history:
-            df_history = pd.DataFrame(history)
-            csv_data = df_history.to_csv(index=False)
-            st.download_button(
-                "⬇️ Download History CSV",
-                data=csv_data,
-                file_name="prediction_history.csv",
-                mime="text/csv"
-            )
+elif page == "🕘 Prediction History":
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.subheader("🕘 Continuous Audit Log")
+    st.write("Access full history of remote processing runs and detection metadata.")
+    
+    hist_data = load_history_csv(100)
+    h_stats = get_history_stats()
+    
+    k1, k2, k3 = st.columns(3)
+    k1.metric("Analyses Logged", h_stats["total_predictions"])
+    k2.metric("Total Plates Found", h_stats["total_plates"])
+    with k3:
+        if st.button("🗑️ Clear Prediction Log", use_container_width=True):
+            requests.delete(f"{API_URL}/history")
+            st.rerun()
+            
+    st.markdown("---")
+    
+    if not hist_data:
+        st.info("No audit logs found. Predictions will appear here once processed.")
     else:
-        st.markdown("""
-        <div class="history-card">
-            <div class="history-title">No predictions yet</div>
-            <div class="history-meta">History will appear here after first analysis.</div>
-        </div>
-        """, unsafe_allow_html=True)
+        for item in hist_data:
+            with st.expander(f"📜 {item['filename']} — {item['datetime'][:19]}", expanded=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    h_img = load_image_from_path(item["original_image_path"])
+                    if h_img: st.image(h_img, caption="Archived Original")
+                with c2:
+                    h_ann = load_image_from_path(item["annotated_image_path"])
+                    if h_ann: st.image(h_ann, caption="Processed Layer")
+                
+                st.markdown(f"**Metadata:** Status `{item['status']}` | Total Plates: `{item['nb_plates']}`")
+                if item.get("detections") and item["detections"] != "[]":
+                    try:
+                        d_parsed = ast.literal_eval(item["detections"])
+                        st.dataframe(pd.DataFrame(d_parsed), hide_index=True, use_container_width=True)
+                    except:
+                        st.code(item["detections"])
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# ============================================================================
-# FOOTER
-# ============================================================================
-st.markdown("---")
+# Footer Styling
+st.markdown("<br><br>", unsafe_allow_html=True)
 st.markdown(
-    '<div style="text-align:center; color:#64748b; font-size:0.85rem;">'
-    '🚀 Powered by <strong>SSD</strong> + <strong>FastAPI</strong> + <strong>PySpark</strong> + <strong>Streamlit</strong>'
+    '<div style="text-align:center; color:#64748b; font-size:0.85rem; letter-spacing: 0.05em; opacity: 0.7;">'
+    'ENGINEERED BY <strong>NEURAL PLATES LAB</strong> &bull; POWERED BY <strong>PYSPARK ENGINE</strong>'
     '</div>',
     unsafe_allow_html=True
 )
