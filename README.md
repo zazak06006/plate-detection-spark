@@ -66,7 +66,7 @@ python preprocessing.py
 
 ---
 
-### 2️⃣ Entraînement du modèle (YOLOv8)
+### 2️⃣ Entraînement du modèle (SimpleSDD)
 
 #### Option A : Utiliser le modèle pré-entraîné
 
