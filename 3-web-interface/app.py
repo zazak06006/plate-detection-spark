@@ -251,7 +251,7 @@ if page == "📥 Upload Analysis":
     st.subheader("📥 Intelligent Batch Upload")
     st.write("Drag and drop multiple images for high-speed concurrent analysis.")
     
-    uploaded_files = st.file_uploader("", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Sélectionnez vos images", type=["jpg", "jpeg", "png"], accept_multiple_files=True, label_visibility="collapsed")
     
     if st.button("🚀 Lancer l'analyse intensive", use_container_width=True) and uploaded_files:
         with st.spinner("Processing on Spark Cluster..."):
@@ -295,7 +295,7 @@ elif page == "📂 Sample Dataset":
     cols = st.columns(4)
     for i, path in enumerate(st.session_state["sample_paths"]):
         with cols[i % 4]:
-            st.image(Image.open(path), use_column_width=True)
+            st.image(Image.open(path), use_container_width=True)
             if st.checkbox("Select", key=f"v_sel_{path.name}"):
                 selected_payload.append(path)
     st.markdown('</div>', unsafe_allow_html=True)
